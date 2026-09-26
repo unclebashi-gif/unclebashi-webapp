@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAppStore } from '@/lib/store';
-import { Button } from '../ui/Button';
+import { Button } from '../ui/button';
 import { IMAGES, COMMUNITY_TIERS } from '@/lib/constants';
 import { useGeolocation, COUNTRY_NAMES, type LocationCategory } from '@/hooks/useGeolocation';
 import {
@@ -346,7 +346,7 @@ export const CommunityHub: React.FC = () => {
             return (
               <button
                 key={tier.id}
-                onClick={() => isAccessible && setSelectedTier(tier.id as any)}
+                onClick={() => isAccessible && setSelectedTier(tier.id as typeof selectedTier)}
                 className={`p-4 rounded-xl border-2 text-left transition-all ${
                   isSelected
                     ? 'border-[#c4785a] bg-white shadow-sm'

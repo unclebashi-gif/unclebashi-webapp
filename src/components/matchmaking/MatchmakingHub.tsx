@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '@/lib/store';
-import { Button } from '../ui/Button';
-import { ProfileCard } from '../ui/Card';
+import { Button } from '../ui/button';
+import { ProfileCard } from '../ui/card';
 import { ProgressBar } from '../ui/ProgressBar';
 import { LocationSelector } from '../location/LocationSelector';
 import { IMAGES } from '@/lib/constants';

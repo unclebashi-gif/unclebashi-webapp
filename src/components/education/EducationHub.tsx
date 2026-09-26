@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useAppStore } from '@/lib/store';
 import { useCourseProgress } from '@/hooks/useCourseProgress';
 import { usePayments } from '@/hooks/usePayments';
+import type { Receipt } from '@/hooks/usePayments';
 import { useGeolocation, COUNTRY_NAMES } from '@/hooks/useGeolocation';
-import { Button } from '../ui/Button';
+import { Button } from '../ui/button';
 import { ProgressBar } from '../ui/ProgressBar';
 import { VideoPlayer } from '../video/VideoPlayer';
 import { PaymentModal } from '../payment/PaymentModal';
@@ -226,7 +227,7 @@ export const EducationHub: React.FC = () => {
   };
 
   // Handle payment success
-  const handlePaymentSuccess = (receipt: any) => {
+  const handlePaymentSuccess = (_receipt: Receipt) => {
     refreshPurchases();
     setShowPaymentModal(false);
     if (selectedPremiumCourse) {
@@ -611,7 +612,7 @@ export const EducationHub: React.FC = () => {
           }}
           userId={user.id}
           userEmail={user.email || ''}
-          userName={user.name || ''}
+          userName={user.fullName || ''}
           onPaymentSuccess={handlePaymentSuccess}
         />
       )}

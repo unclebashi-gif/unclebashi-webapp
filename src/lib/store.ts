@@ -8,6 +8,7 @@ export interface User {
   id: string;
   email: string;
   fullName: string;
+  gender?: string;
   profileImage?: string;
   onboardingCompleted: boolean;
   onboardingStep: number;
@@ -81,14 +82,14 @@ interface AppState {
   setCurrentView: (view: string) => void;
 
   // Onboarding
-  onboardingData: Record<string, any>;
-  setOnboardingData: (data: Record<string, any>) => void;
-  updateOnboardingData: (updates: Record<string, any>) => void;
+  onboardingData: Record<string, unknown>;
+  setOnboardingData: (data: Record<string, unknown>) => void;
+  updateOnboardingData: (updates: Record<string, unknown>) => void;
 
   // Courses
   courses: Course[];
   setCourses: (courses: Course[]) => void;
-  updateCourseProgress: (courseId: string, progress: number, status: string) => void;
+  updateCourseProgress: (courseId: string, progress: number, status: Course['status']) => void;
 
   // Journal
   journalEntries: JournalEntry[];
@@ -151,7 +152,7 @@ export const useAppStore = create<AppState>()(
       updateCourseProgress: (courseId, progress, status) =>
         set((state) => ({
           courses: state.courses.map((c) =>
-            c.id === courseId ? { ...c, progress, status: status as any } : c
+            c.id === courseId ? { ...c, progress, status } : c
           ),
         })),
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAppStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase';
-import { Button } from '../ui/Button';
+import { Button } from '../ui/button';
 import { IMAGES } from '@/lib/constants';
 import { useGeolocation, COUNTRY_NAMES, type LocationCategory } from '@/hooks/useGeolocation';
 import {
@@ -278,7 +278,7 @@ export const CoachingHub: React.FC = () => {
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => setActiveTab(tab.id as typeof activeTab)}
                 className={`flex-1 flex items-center justify-center space-x-2 py-3 rounded-lg font-medium transition-colors ${
                   activeTab === tab.id
                     ? 'bg-[#1e3a5f] text-white'

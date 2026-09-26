@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAppStore } from '@/lib/store';
 import { useUserSync } from '@/hooks/useUserSync';
-import { Button } from '../ui/Button';
+import { Button } from '../ui/button';
 import { ProgressBar } from '../ui/ProgressBar';
 import { IMAGES, VALUES_OPTIONS } from '@/lib/constants';
 import {
@@ -18,14 +18,18 @@ import {
 export const ProfilePage: React.FC = () => {
   const { user, updateUser, onboardingData } = useAppStore();
   const { syncProfileFields } = useUserSync();
+  const getOnboardingText = (key: string) => {
+    const value = onboardingData[key];
+    return typeof value === 'string' ? value : '';
+  };
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [editData, setEditData] = useState({
     fullName: user?.fullName || '',
-    bio: onboardingData.bio || '',
-    location: onboardingData.location || '',
-    occupation: onboardingData.occupation || '',
+    bio: getOnboardingText('bio'),
+    location: getOnboardingText('location'),
+    occupation: getOnboardingText('occupation'),
   });
 
   const handleSave = async () => {

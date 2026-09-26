@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAppStore } from '@/lib/store';
-import { Button } from '../ui/Button';
+import { Button } from '../ui/button';
 import {
   MenuIcon,
   XIcon,

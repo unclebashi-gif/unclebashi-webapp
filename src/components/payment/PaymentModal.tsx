@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Button } from '../ui/Button';
+import { Button } from '../ui/button';
 import { Modal } from '../ui/Modal';
 import { useGeolocation, COUNTRY_NAMES } from '@/hooks/useGeolocation';
 import { 
@@ -8,6 +8,7 @@ import {
   CURRENCY_INFO,
   type PaymentMethod,
   type PaymentOption,
+  type Receipt,
 } from '@/hooks/usePayments';
 import {
   CreditCardIcon,
@@ -31,7 +32,7 @@ interface PaymentModalProps {
   userId: string;
   userEmail: string;
   userName: string;
-  onPaymentSuccess: (receipt: any) => void;
+  onPaymentSuccess: (receipt: Receipt) => void;
 }
 
 type PaymentStep = 'select_method' | 'enter_details' | 'processing' | 'success' | 'error';
@@ -54,7 +55,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [transactionRef, setTransactionRef] = useState('');
-  const [receipt, setReceipt] = useState<any>(null);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [pollCount, setPollCount] = useState(0);
   const [showCountrySelector, setShowCountrySelector] = useState(false);
 

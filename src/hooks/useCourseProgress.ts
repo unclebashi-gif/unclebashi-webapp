@@ -64,7 +64,7 @@ export const useCourseProgress = () => {
       if (courseError) throw courseError;
 
       const courseMap = new Map<string, CourseProgress>();
-      courseData?.forEach((row: any) => {
+      courseData?.forEach((row) => {
         courseMap.set(row.course_id, {
           courseId: row.course_id,
           progress: row.progress,
@@ -85,7 +85,7 @@ export const useCourseProgress = () => {
       if (lessonError) throw lessonError;
 
       const lessonMap = new Map<string, LessonProgress>();
-      lessonData?.forEach((row: any) => {
+      lessonData?.forEach((row) => {
         lessonMap.set(row.lesson_id, {
           lessonId: row.lesson_id,
           courseId: row.course_id,
@@ -109,7 +109,7 @@ export const useCourseProgress = () => {
 
       if (reflectionError) throw reflectionError;
 
-      setReflections(reflectionData?.map((row: any) => ({
+      setReflections(reflectionData?.map((row) => ({
         lessonId: row.lesson_id,
         courseId: row.course_id,
         prompt: row.prompt,
@@ -220,6 +220,8 @@ export const useCourseProgress = () => {
     } catch (error) {
       console.error('Error saving lesson progress:', error);
     }
+  // Both helpers are memoized by userId and declared below to keep this flow grouped.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   // Update course progress based on lesson completions
@@ -236,7 +238,7 @@ export const useCourseProgress = () => {
 
       if (lessonsError) throw lessonsError;
 
-      const completedCount = lessons?.filter((l: any) => l.is_completed).length || 0;
+      const completedCount = lessons?.filter((lesson) => lesson.is_completed).length || 0;
       const totalCount = lessons?.length || 1;
       const progress = Math.round((completedCount / totalCount) * 100);
       const status = completedCount === 0 ? 'not_started' : 
@@ -268,7 +270,7 @@ export const useCourseProgress = () => {
         newMap.set(courseId, {
           courseId,
           progress,
-          status: status as any,
+          status: status as CourseProgress['status'],
           startedAt: status !== 'not_started' ? now : null,
           completedAt: status === 'completed' ? now : null,
           lastAccessed: now,

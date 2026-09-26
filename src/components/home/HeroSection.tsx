@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from '../ui/Button';
+import { Button } from '../ui/button';
 import { useAppStore } from '@/lib/store';
 import { IMAGES } from '@/lib/constants';
 import { ShieldIcon, CheckCircleIcon, UsersIcon, ArrowRightIcon, GlobeIcon, MapPinIcon } from '../ui/Icons';

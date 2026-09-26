@@ -3,6 +3,39 @@ import { useAppStore } from '@/lib/store';
 import { useCourseProgress } from '@/hooks/useCourseProgress';
 import { PlayIcon, CheckCircleIcon } from '../ui/Icons';
 
+interface YouTubePlayer {
+  getCurrentTime: () => number;
+  getDuration: () => number;
+  mute: () => void;
+  pauseVideo: () => void;
+  playVideo: () => void;
+  seekTo: (seconds: number, allowSeekAhead: boolean) => void;
+  setVolume: (volume: number) => void;
+  unMute: () => void;
+}
+
+interface YouTubePlayerEvent {
+  data: number;
+  target: YouTubePlayer;
+}
+
+interface YouTubeWindow extends Window {
+  YT?: {
+    Player: new (
+      elementId: string,
+      options: {
+        videoId: string;
+        playerVars: Record<string, number>;
+        events: {
+          onReady: (event: YouTubePlayerEvent) => void;
+          onStateChange: (event: YouTubePlayerEvent) => void;
+        };
+      },
+    ) => YouTubePlayer;
+  };
+  onYouTubeIframeAPIReady?: () => void;
+}
+
 // Custom icons for video player
 const PauseIcon: React.FC<{ size?: number; className?: string }> = ({ size = 24, className }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
@@ -97,7 +130,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [markedComplete, setMarkedComplete] = useState(isCompleted);
   const [showCompletionBanner, setShowCompletionBanner] = useState(false);
   const [isYouTube, setIsYouTube] = useState(false);
-  const [youtubePlayer, setYoutubePlayer] = useState<any>(null);
+  const [youtubePlayer, setYoutubePlayer] = useState<YouTubePlayer | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   
@@ -392,8 +425,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
 
       // Initialize player when API is ready
-      (window as any).onYouTubeIframeAPIReady = () => {
-        const player = new (window as any).YT.Player(`youtube-player-${lessonId}`, {
+      const youtubeWindow = window as YouTubeWindow;
+      youtubeWindow.onYouTubeIframeAPIReady = () => {
+        const player = new youtubeWindow.YT!.Player(`youtube-player-${lessonId}`, {
           videoId: youtubeId,
           playerVars: {
             autoplay: 0,
@@ -404,7 +438,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             fs: 0,
           },
           events: {
-            onReady: (event: any) => {
+            onReady: (event) => {
               setYoutubePlayer(event.target);
               setDuration(event.target.getDuration());
               
@@ -422,7 +456,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 }
               }
             },
-            onStateChange: (event: any) => {
+            onStateChange: (event) => {
               setIsPlaying(event.data === 1);
               if (event.data === 1) {
                 setHasStarted(true);
@@ -433,8 +467,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       };
 
       // If API already loaded
-      if ((window as any).YT && (window as any).YT.Player) {
-        (window as any).onYouTubeIframeAPIReady();
+      if (youtubeWindow.YT && youtubeWindow.onYouTubeIframeAPIReady) {
+        youtubeWindow.onYouTubeIframeAPIReady();
       }
     }
   }, [youtubeId, lessonId, progressStorageKey, getLessonProgress]);

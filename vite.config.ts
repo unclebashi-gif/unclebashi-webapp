@@ -16,4 +16,20 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          const normalizedId = id.replaceAll('\\', '/');
+          const marker = '/node_modules/';
+          const dependencyPath = normalizedId.slice(normalizedId.lastIndexOf(marker) + marker.length);
+          const packageName = dependencyPath.startsWith('@')
+            ? dependencyPath.split('/').slice(0, 2).join('/')
+            : dependencyPath.split('/')[0];
+
+          if (packageName.startsWith('@supabase/')) return 'supabase-vendor';
+        },
+      },
+    },
+  },
 }));

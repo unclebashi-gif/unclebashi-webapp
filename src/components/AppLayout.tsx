@@ -1,17 +1,18 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { useAppStore } from '@/lib/store';
 import { useSessionManager } from '@/hooks/useSessionManager';
 import { Header } from './layout/Header';
 import { Footer } from './layout/Footer';
 import { AuthModal } from './auth/AuthModal';
-import { HomePage } from './HomePage';
-import { OnboardingFlow } from './onboarding/OnboardingFlow';
-import { EducationHub } from './education/EducationHub';
-import { CommunityHub } from './community/CommunityHub';
-import { CoachingHub } from './coaching/CoachingHub';
-import { MatchmakingHub } from './matchmaking/MatchmakingHub';
-import { ProfilePage } from './profile/ProfilePage';
-import { AdminDashboard } from './admin/AdminDashboard';
+
+const HomePage = lazy(() => import('./HomePage').then(({ HomePage }) => ({ default: HomePage })));
+const OnboardingFlow = lazy(() => import('./onboarding/OnboardingFlow').then(({ OnboardingFlow }) => ({ default: OnboardingFlow })));
+const EducationHub = lazy(() => import('./education/EducationHub').then(({ EducationHub }) => ({ default: EducationHub })));
+const CommunityHub = lazy(() => import('./community/CommunityHub').then(({ CommunityHub }) => ({ default: CommunityHub })));
+const CoachingHub = lazy(() => import('./coaching/CoachingHub').then(({ CoachingHub }) => ({ default: CoachingHub })));
+const MatchmakingHub = lazy(() => import('./matchmaking/MatchmakingHub').then(({ MatchmakingHub }) => ({ default: MatchmakingHub })));
+const ProfilePage = lazy(() => import('./profile/ProfilePage').then(({ ProfilePage }) => ({ default: ProfilePage })));
+const AdminDashboard = lazy(() => import('./admin/AdminDashboard').then(({ AdminDashboard }) => ({ default: AdminDashboard })));
 
 const AppLayout: React.FC = () => {
   const { currentView, showAuthModal, setShowAuthModal, user, isAuthenticated } = useAppStore();
@@ -53,7 +54,11 @@ const AppLayout: React.FC = () => {
 
   // Render onboarding flow without header/footer
   if (currentView === 'onboarding' && isAuthenticated && !user?.onboardingCompleted) {
-    return <OnboardingFlow />;
+    return (
+      <Suspense fallback={<ViewLoadingState />}>
+        <OnboardingFlow />
+      </Suspense>
+    );
   }
 
   const renderContent = () => {
@@ -89,7 +94,9 @@ const AppLayout: React.FC = () => {
       <Header />
       
       <main className="flex-1">
-        {renderContent()}
+        <Suspense fallback={<ViewLoadingState />}>
+          {renderContent()}
+        </Suspense>
       </main>
 
       {currentView === 'home' && <Footer />}
@@ -98,5 +105,11 @@ const AppLayout: React.FC = () => {
     </div>
   );
 };
+
+const ViewLoadingState: React.FC = () => (
+  <div className="flex min-h-48 items-center justify-center text-sm text-gray-500" role="status">
+    Loading…
+  </div>
+);
 
 export default AppLayout;

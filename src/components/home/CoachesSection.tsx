@@ -1,6 +1,6 @@
 import React from 'react';
 import { IMAGES } from '@/lib/constants';
-import { Button } from '../ui/Button';
+import { Button } from '../ui/button';
 import { useAppStore } from '@/lib/store';
 import { CheckCircleIcon, AwardIcon, BookIcon, UsersIcon, MapPinIcon } from '../ui/Icons';
 

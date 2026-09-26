@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
 import { useUserSync } from '@/hooks/useUserSync';
-import { Button } from '../ui/Button';
+import { Button } from '../ui/button';
 import { StepProgress } from '../ui/ProgressBar';
 import { IMAGES, VALUES_OPTIONS, MARRIAGE_INTENTIONS, COMMITMENT_LEVELS, READINESS_QUESTIONS } from '@/lib/constants';
+import type { GeoLocation, LocationCategory } from '@/hooks/useGeolocation';
 import { 
   PILOT_COUNTRIES, 
   COUNTRY_NAMES, 
@@ -23,8 +24,26 @@ import {
   GlobeIcon,
 } from '../ui/Icons';
 
+interface OnboardingData extends Record<string, unknown> {
+  agreementAccepted?: boolean;
+  city?: string;
+  commitmentLevel?: string;
+  countryCode?: string;
+  dateOfBirth?: string;
+  gender?: string;
+  location?: string;
+  locationCategory?: LocationCategory;
+  marriageIntention?: string;
+  marriageTimeline?: string;
+  partnerPreferences?: string;
+  readinessAnswers?: Record<string, number>;
+  selectedValues?: string[];
+  verificationAcknowledged?: boolean;
+}
+
 export const OnboardingFlow: React.FC = () => {
-  const { user, updateUser, setCurrentView, onboardingData, updateOnboardingData } = useAppStore();
+  const { user, updateUser, setCurrentView, onboardingData: storedOnboardingData, updateOnboardingData } = useAppStore();
+  const onboardingData = storedOnboardingData as OnboardingData;
   const { syncOnboardingData, syncOnboardingComplete, syncUserProfile } = useUserSync();
   const { location: detectedLocation, requestLocation, setManualLocation, loading: locationLoading } = useGeolocation();
   const [currentStep, setCurrentStep] = useState(user?.onboardingStep || 0);
@@ -37,7 +56,7 @@ export const OnboardingFlow: React.FC = () => {
   const debouncedSync = useCallback(
     (() => {
       let timeout: ReturnType<typeof setTimeout>;
-      return (data: Record<string, any>) => {
+      return (data: Record<string, unknown>) => {
         clearTimeout(timeout);
         timeout = setTimeout(() => {
           syncOnboardingData(data);
@@ -84,7 +103,7 @@ export const OnboardingFlow: React.FC = () => {
     
     // Calculate readiness score
     const readinessAnswers = onboardingData.readinessAnswers || {};
-    const totalScore = Object.values(readinessAnswers).reduce((sum: number, val: any) => sum + (val || 0), 0);
+    const totalScore = Object.values(readinessAnswers).reduce((sum, value) => sum + (value || 0), 0);
     const maxScore = READINESS_QUESTIONS.length * 5;
     const readinessScore = Math.round((totalScore / maxScore) * 100);
 
@@ -277,7 +296,7 @@ const WelcomeStep: React.FC = () => (
   </div>
 );
 
-const JourneyStep: React.FC<{ data: any; updateData: (d: any) => void }> = ({ data, updateData }) => (
+const JourneyStep: React.FC<{ data: OnboardingData; updateData: (d: Record<string, unknown>) => void }> = ({ data, updateData }) => (
   <div>
     <h2 className="text-xl font-bold text-[#1e3a5f] mb-2">What brings you to Uncle Bashi?</h2>
     <p className="text-gray-600 mb-6">Select the option that best describes your current situation.</p>
@@ -301,9 +320,9 @@ const JourneyStep: React.FC<{ data: any; updateData: (d: any) => void }> = ({ da
 );
 
 interface PersonalInfoStepProps {
-  data: any;
-  updateData: (d: any) => void;
-  detectedLocation: any;
+  data: OnboardingData;
+  updateData: (d: Record<string, unknown>) => void;
+  detectedLocation: GeoLocation | null;
   requestLocation: () => void;
   setManualLocation: (code: string, city?: string) => void;
   locationLoading: boolean;
@@ -507,7 +526,7 @@ const PersonalInfoStep: React.FC<PersonalInfoStepProps> = ({
 };
 
 
-const ValuesStep: React.FC<{ data: any; updateData: (d: any) => void }> = ({ data, updateData }) => {
+const ValuesStep: React.FC<{ data: OnboardingData; updateData: (d: Record<string, unknown>) => void }> = ({ data, updateData }) => {
   const selectedValues = data.selectedValues || [];
   const toggleValue = (valueId: string) => {
     const newValues = selectedValues.includes(valueId)
@@ -542,7 +561,7 @@ const ValuesStep: React.FC<{ data: any; updateData: (d: any) => void }> = ({ dat
   );
 };
 
-const IntentionsStep: React.FC<{ data: any; updateData: (d: any) => void }> = ({ data, updateData }) => (
+const IntentionsStep: React.FC<{ data: OnboardingData; updateData: (d: Record<string, unknown>) => void }> = ({ data, updateData }) => (
   <div>
     <h2 className="text-xl font-bold text-[#1e3a5f] mb-2">Your Marriage Intentions</h2>
     <p className="text-gray-600 mb-6">Help us understand your timeline and expectations.</p>
@@ -575,7 +594,7 @@ const IntentionsStep: React.FC<{ data: any; updateData: (d: any) => void }> = ({
   </div>
 );
 
-const CommitmentStep: React.FC<{ data: any; updateData: (d: any) => void }> = ({ data, updateData }) => (
+const CommitmentStep: React.FC<{ data: OnboardingData; updateData: (d: Record<string, unknown>) => void }> = ({ data, updateData }) => (
   <div>
     <h2 className="text-xl font-bold text-[#1e3a5f] mb-2">Your Commitment Level</h2>
     <p className="text-gray-600 mb-6">Be honest about where you are in your journey.</p>
@@ -603,7 +622,7 @@ const CommitmentStep: React.FC<{ data: any; updateData: (d: any) => void }> = ({
   </div>
 );
 
-const ReadinessStep: React.FC<{ data: any; updateData: (d: any) => void }> = ({ data, updateData }) => {
+const ReadinessStep: React.FC<{ data: OnboardingData; updateData: (d: Record<string, unknown>) => void }> = ({ data, updateData }) => {
   const answers = data.readinessAnswers || {};
   const setAnswer = (questionId: string, value: number) => {
     updateData({ readinessAnswers: { ...answers, [questionId]: value } });
@@ -639,7 +658,7 @@ const ReadinessStep: React.FC<{ data: any; updateData: (d: any) => void }> = ({ 
   );
 };
 
-const VerificationStep: React.FC<{ data: any; updateData: (d: any) => void }> = ({ data, updateData }) => (
+const VerificationStep: React.FC<{ data: OnboardingData; updateData: (d: Record<string, unknown>) => void }> = ({ data, updateData }) => (
   <div>
     <h2 className="text-xl font-bold text-[#1e3a5f] mb-2">Identity Verification</h2>
     <p className="text-gray-600 mb-6">We verify all profiles to maintain a safe, trustworthy community.</p>
@@ -674,7 +693,7 @@ const VerificationStep: React.FC<{ data: any; updateData: (d: any) => void }> = 
   </div>
 );
 
-const AgreementStep: React.FC<{ data: any; updateData: (d: any) => void }> = ({ data, updateData }) => (
+const AgreementStep: React.FC<{ data: OnboardingData; updateData: (d: Record<string, unknown>) => void }> = ({ data, updateData }) => (
   <div>
     <h2 className="text-xl font-bold text-[#1e3a5f] mb-2">Community Guidelines</h2>
     <p className="text-gray-600 mb-6">Please review and accept our community standards.</p>

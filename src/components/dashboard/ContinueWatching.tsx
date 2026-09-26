@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAppStore } from '@/lib/store';
 import { useCourseProgress, LessonProgress } from '@/hooks/useCourseProgress';
-import { Button } from '../ui/Button';
+import { Button } from '../ui/button';
 import { PlayIcon, ClockIcon, CheckCircleIcon, BookIcon } from '../ui/Icons';
 import { IMAGES } from '@/lib/constants';
 

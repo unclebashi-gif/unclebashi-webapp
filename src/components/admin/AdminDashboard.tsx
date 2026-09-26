@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Button } from '../ui/Button';
+import { Button } from '../ui/button';
 import { IMAGES } from '@/lib/constants';
 import {
   UsersIcon,
@@ -83,7 +83,7 @@ export const AdminDashboard: React.FC = () => {
           ].map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id as typeof activeTab)}
               className={`flex-1 py-3 rounded-lg font-medium transition-colors ${
                 activeTab === tab.id
                   ? 'bg-[#1e3a5f] text-white'

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Modal } from '../ui/Modal';
-import { Button } from '../ui/Button';
+import { Button } from '../ui/button';
 import { useAppStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase';
 import { EyeIcon, EyeOffIcon, CheckCircleIcon } from '../ui/Icons';
@@ -9,6 +9,14 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+const getAuthErrorMessage = (error: unknown, fallback: string): string => {
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = error.message;
+    return typeof message === 'string' && message ? message : fallback;
+  }
+  return fallback;
+};
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const { authModalMode, setAuthModalMode, setUser, setCurrentView } = useAppStore();
@@ -140,8 +148,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           }
         }
       }
-    } catch (err: any) {
-      setError(err.message || 'An error occurred');
+    } catch (err: unknown) {
+      setError(getAuthErrorMessage(err, 'An error occurred'));
     } finally {
       setIsLoading(false);
     }
@@ -165,8 +173,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
       if (error) throw error;
 
       setSuccess('Password reset email sent! Please check your inbox.');
-    } catch (err: any) {
-      setError(err.message || 'Failed to send reset email');
+    } catch (err: unknown) {
+      setError(getAuthErrorMessage(err, 'Failed to send reset email'));
     } finally {
       setIsLoading(false);
     }

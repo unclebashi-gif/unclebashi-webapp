@@ -10,11 +10,11 @@ export const useUserSync = () => {
   const { user } = useAppStore();
 
   // Sync user profile to the database
-  const syncUserProfile = useCallback(async (updates?: Record<string, any>) => {
+  const syncUserProfile = useCallback(async (updates?: Record<string, unknown>) => {
     if (!user?.id) return;
 
     try {
-      const profileData: Record<string, any> = {
+      const profileData: Record<string, unknown> = {
         id: user.id,
         email: user.email,
         full_name: user.fullName,
@@ -43,7 +43,7 @@ export const useUserSync = () => {
   }, [user]);
 
   // Sync onboarding data to the database
-  const syncOnboardingData = useCallback(async (onboardingData: Record<string, any>) => {
+  const syncOnboardingData = useCallback(async (onboardingData: Record<string, unknown>) => {
     if (!user?.id) return;
 
     try {
@@ -74,7 +74,7 @@ export const useUserSync = () => {
     if (!user?.id) return;
 
     try {
-      const dbFields: Record<string, any> = {
+      const dbFields: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
       };
 
