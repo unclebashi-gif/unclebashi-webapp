@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAppStore } from '@/lib/store';
+import { supabase } from '@/lib/supabase';
 import { Button } from '../ui/button';
 import {
   MenuIcon,
@@ -22,10 +23,11 @@ export const Header: React.FC = () => {
     setCurrentView,
     setShowAuthModal,
     setAuthModalMode,
-    logout,
+    clearUserSession,
   } = useAppStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [logoutError, setLogoutError] = useState('');
 
   const navItems = [
     { id: 'home', label: 'Home', icon: HomeIcon },
@@ -50,10 +52,16 @@ export const Header: React.FC = () => {
     setShowAuthModal(true);
   };
 
-  const handleLogout = () => {
-    logout();
-    setUserMenuOpen(false);
-    setCurrentView('home');
+  const handleLogout = async () => {
+    setLogoutError('');
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      clearUserSession();
+      setUserMenuOpen(false);
+    } catch (error: unknown) {
+      setLogoutError(error instanceof Error ? error.message : 'Sign out failed. Please try again.');
+    }
   };
 
   return (
@@ -154,7 +162,7 @@ export const Header: React.FC = () => {
                         Settings
                       </button>
 
-                      {user?.role === 'admin' && (
+                      {user?.roles.includes('admin') && (
                         <button
                           onClick={() => {
                             handleNavClick('admin');
@@ -168,6 +176,9 @@ export const Header: React.FC = () => {
                       )}
 
                       <div className="border-t border-gray-100 mt-2 pt-2">
+                        {logoutError && (
+                          <p className="px-4 pb-2 text-xs text-red-700" role="alert">{logoutError}</p>
+                        )}
                         <button
                           onClick={handleLogout}
                           className="w-full flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50"

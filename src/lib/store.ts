@@ -1,15 +1,16 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { supabase } from '@/lib/supabase';
 
 
 // Types
+export type UserRole = 'user' | 'coach' | 'moderator' | 'admin';
+
 export interface User {
   id: string;
   email: string;
   fullName: string;
   gender?: string;
-  profileImage?: string;
+  profileImageUrl?: string;
   onboardingCompleted: boolean;
   onboardingStep: number;
   marriageIntention?: string;
@@ -17,7 +18,7 @@ export interface User {
   valuesAssessment: string[];
   readinessScore: number;
   matchmakingUnlocked: boolean;
-  role: 'user' | 'moderator' | 'coach' | 'admin';
+  roles: UserRole[];
 }
 
 export interface Course {
@@ -73,9 +74,9 @@ interface AppState {
   // Auth & User
   isAuthenticated: boolean;
   user: User | null;
-  setUser: (user: User | null) => void;
+  setAuthenticatedUser: (user: User, onboardingData: Record<string, unknown>) => void;
   updateUser: (updates: Partial<User>) => void;
-  logout: () => void;
+  clearUserSession: () => void;
 
   // Navigation
   currentView: string;
@@ -117,18 +118,21 @@ export const useAppStore = create<AppState>()(
       // Auth & User
       isAuthenticated: false,
       user: null,
-      setUser: (user) => set({ user, isAuthenticated: !!user }),
+      setAuthenticatedUser: (user, onboardingData) =>
+        set({ user, isAuthenticated: true, onboardingData }),
       updateUser: (updates) =>
         set((state) => ({
           user: state.user ? { ...state.user, ...updates } : null,
         })),
-      logout: () => {
-        // Sign out from Supabase auth
-        supabase.auth.signOut().catch(console.error);
+      clearUserSession: () => {
         set({
           isAuthenticated: false,
           user: null,
           onboardingData: {},
+          courses: [],
+          journalEntries: [],
+          communityPosts: [],
+          matchProfiles: [],
           currentView: 'home',
         });
       },
@@ -184,9 +188,6 @@ export const useAppStore = create<AppState>()(
     {
       name: 'uncle-bashi-storage',
       partialize: (state) => ({
-        isAuthenticated: state.isAuthenticated,
-        user: state.user,
-        onboardingData: state.onboardingData,
         journalEntries: state.journalEntries,
         courses: state.courses,
       }),

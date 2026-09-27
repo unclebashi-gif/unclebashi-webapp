@@ -16,7 +16,7 @@ const AdminDashboard = lazy(() => import('./admin/AdminDashboard').then(({ Admin
 
 const AppLayout: React.FC = () => {
   const { currentView, showAuthModal, setShowAuthModal, user, isAuthenticated } = useAppStore();
-  const { isRestoring } = useSessionManager();
+  const { isRestoring, restoreError } = useSessionManager();
 
   // Show a loading screen while restoring the session
   if (isRestoring) {
@@ -81,7 +81,7 @@ const AppLayout: React.FC = () => {
       case 'profile':
         return <ProfilePage />;
       case 'admin':
-        return user?.role === 'admin' ? <AdminDashboard /> : <HomePage />;
+        return user?.roles.includes('admin') ? <AdminDashboard /> : <HomePage />;
       case 'settings':
         return <ProfilePage />;
       default:
@@ -94,6 +94,11 @@ const AppLayout: React.FC = () => {
       <Header />
       
       <main className="flex-1">
+        {restoreError && (
+          <div className="mx-auto mt-4 max-w-7xl px-4 text-sm text-red-700" role="alert">
+            {restoreError}
+          </div>
+        )}
         <Suspense fallback={<ViewLoadingState />}>
           {renderContent()}
         </Suspense>

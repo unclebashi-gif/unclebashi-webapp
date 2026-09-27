@@ -3,6 +3,7 @@ import { Modal } from '../ui/Modal';
 import { Button } from '../ui/button';
 import { useAppStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase';
+import { IdentityLoadError, loadIdentity } from '@/lib/identity';
 import { EyeIcon, EyeOffIcon, CheckCircleIcon } from '../ui/Icons';
 
 interface AuthModalProps {
@@ -19,7 +20,7 @@ const getAuthErrorMessage = (error: unknown, fallback: string): string => {
 };
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
-  const { authModalMode, setAuthModalMode, setUser, setCurrentView } = useAppStore();
+  const { authModalMode, setAuthModalMode, setAuthenticatedUser, setCurrentView } = useAppStore();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -56,7 +57,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           throw new Error('Password must be at least 8 characters');
         }
 
-        // Sign up with Supabase
         const { data: authData, error: signUpError } = await supabase.auth.signUp({
           email: formData.email,
           password: formData.password,
@@ -68,88 +68,40 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         });
 
         if (signUpError) throw signUpError;
+        if (!authData.user) throw new Error('Supabase did not return a newly created account.');
 
-        if (authData.user) {
-          // Create user profile in database
-          const { error: profileError } = await supabase.from('users').insert({
-            id: authData.user.id,
-            email: formData.email,
-            full_name: formData.fullName,
-            email_verified: false,
-            onboarding_completed: false,
-            onboarding_step: 0,
-          });
-
-          if (profileError && !profileError.message.includes('duplicate')) {
-            console.error('Profile creation error:', profileError);
-          }
-
-          // Check if email confirmation is required
-          if (authData.session) {
-            // User is logged in immediately (email confirmation disabled)
-            const user = {
-              id: authData.user.id,
-              email: formData.email,
-              fullName: formData.fullName,
-              onboardingCompleted: false,
-              onboardingStep: 0,
-              valuesAssessment: [],
-              readinessScore: 0,
-              matchmakingUnlocked: false,
-              role: 'user' as const,
-            };
-            setUser(user);
-            onClose();
-            setCurrentView('onboarding');
-          } else {
-            // Email confirmation required
-            setSuccess('Account created! Please check your email to verify your account.');
-          }
+        if (authData.session) {
+          const identity = await loadIdentity(authData.user);
+          setAuthenticatedUser(identity.user, identity.onboardingData);
+          onClose();
+          setCurrentView(identity.user.onboardingCompleted ? 'education' : 'onboarding');
+        } else {
+          setSuccess('Account created. Please check your email to verify your account before signing in.');
         }
       } else {
-        // Sign in with Supabase
         const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({
           email: formData.email,
           password: formData.password,
         });
 
         if (signInError) throw signInError;
+        if (!authData.user) throw new Error('Supabase did not return the signed-in account.');
 
-        if (authData.user) {
-          // Fetch user profile from database
-          const { data: profileData } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', authData.user.id)
-            .single();
-
-          const user = {
-            id: authData.user.id,
-            email: authData.user.email || formData.email,
-            fullName: profileData?.full_name || authData.user.user_metadata?.full_name || 'User',
-            onboardingCompleted: profileData?.onboarding_completed || false,
-            onboardingStep: profileData?.onboarding_step || 0,
-            marriageIntention: profileData?.marriage_intention,
-            commitmentLevel: profileData?.commitment_level,
-            valuesAssessment: profileData?.values_assessment || [],
-            readinessScore: profileData?.readiness_score || 0,
-            matchmakingUnlocked: profileData?.matchmaking_unlocked || false,
-            role: 'user' as const,
-          };
-
-          setUser(user);
-          onClose();
-
-          // Redirect based on onboarding status
-          if (!user.onboardingCompleted) {
-            setCurrentView('onboarding');
-          } else {
-            setCurrentView('education');
-          }
-        }
+        const identity = await loadIdentity(authData.user);
+        setAuthenticatedUser(identity.user, identity.onboardingData);
+        onClose();
+        setCurrentView(identity.user.onboardingCompleted ? 'education' : 'onboarding');
       }
     } catch (err: unknown) {
-      setError(getAuthErrorMessage(err, 'An error occurred'));
+      if (err instanceof IdentityLoadError && err.kind === 'profile') {
+        setError('Your account is authenticated, but its profile was not provisioned. Please contact support.');
+      } else if (err instanceof IdentityLoadError && err.kind === 'roles') {
+        setError('Your account roles could not be verified. Please contact support.');
+      } else if (err instanceof IdentityLoadError) {
+        setError('Your account is authenticated, but its data could not be loaded. Please try again.');
+      } else {
+        setError(getAuthErrorMessage(err, 'Authentication failed. Please try again.'));
+      }
     } finally {
       setIsLoading(false);
     }

@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '@/lib/store';
 import { useUserSync } from '@/hooks/useUserSync';
+import { supabase } from '@/lib/supabase';
 import { Button } from '../ui/button';
 import { StepProgress } from '../ui/ProgressBar';
 import { IMAGES, VALUES_OPTIONS, MARRIAGE_INTENTIONS, COMMITMENT_LEVELS, READINESS_QUESTIONS } from '@/lib/constants';
@@ -22,6 +23,7 @@ import {
   UsersIcon,
   MapPinIcon,
   GlobeIcon,
+  LogOutIcon,
 } from '../ui/Icons';
 
 interface OnboardingData extends Record<string, unknown> {
@@ -44,45 +46,51 @@ interface OnboardingData extends Record<string, unknown> {
 export const OnboardingFlow: React.FC = () => {
   const { user, updateUser, setCurrentView, onboardingData: storedOnboardingData, updateOnboardingData } = useAppStore();
   const onboardingData = storedOnboardingData as OnboardingData;
-  const { syncOnboardingData, syncOnboardingComplete, syncUserProfile } = useUserSync();
+  const { syncOnboardingData, completeOnboarding } = useUserSync();
   const { location: detectedLocation, requestLocation, setManualLocation, loading: locationLoading } = useGeolocation();
   const [currentStep, setCurrentStep] = useState(user?.onboardingStep || 0);
   const [isLoading, setIsLoading] = useState(false);
-  const [lastSyncedStep, setLastSyncedStep] = useState(-1);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [persistenceError, setPersistenceError] = useState('');
+  const syncTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncQueue = useRef<Promise<void>>(Promise.resolve());
+  const signOutLock = useRef(false);
+  const lastSyncedSnapshot = useRef<string | null>(null);
 
   const totalSteps = 10;
 
-  // Debounced sync of onboarding data to database
-  const debouncedSync = useCallback(
-    (() => {
-      let timeout: ReturnType<typeof setTimeout>;
-      return (data: Record<string, unknown>) => {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => {
-          syncOnboardingData(data);
-        }, 1500); // Sync after 1.5s of inactivity
-      };
-    })(),
-    [syncOnboardingData]
-  );
+  const enqueueOnboardingSync = useCallback((data: Record<string, unknown>) => {
+    const nextWrite = syncQueue.current
+      .catch(() => undefined)
+      .then(() => syncOnboardingData(data));
+    syncQueue.current = nextWrite;
+    return nextWrite;
+  }, [syncOnboardingData]);
 
-  // Sync onboarding data whenever it changes
   useEffect(() => {
-    if (Object.keys(onboardingData).length > 0) {
-      debouncedSync(onboardingData);
-    }
-  }, [onboardingData, debouncedSync]);
+    if (Object.keys(onboardingData).length === 0 && currentStep === 0) return;
 
-  // Sync step progress to database when step changes
-  useEffect(() => {
-    if (currentStep !== lastSyncedStep && user?.id) {
-      setLastSyncedStep(currentStep);
-      // Update the user's onboarding step in the store
-      updateUser({ onboardingStep: currentStep });
-      // Sync to database (debounced via the onboarding data sync)
-      syncOnboardingData({ ...onboardingData, _currentStep: currentStep });
-    }
-  }, [currentStep]);
+    const snapshot = { ...onboardingData, _currentStep: currentStep };
+    const serializedSnapshot = JSON.stringify(snapshot);
+    syncTimeout.current = setTimeout(() => {
+      syncTimeout.current = null;
+      void enqueueOnboardingSync(snapshot)
+        .then(() => {
+          lastSyncedSnapshot.current = serializedSnapshot;
+          setPersistenceError('');
+        })
+        .catch((error: unknown) => {
+          setPersistenceError(error instanceof Error ? error.message : 'Could not save onboarding progress.');
+        });
+    }, 1500);
+
+    return () => {
+      if (syncTimeout.current) {
+        clearTimeout(syncTimeout.current);
+        syncTimeout.current = null;
+      }
+    };
+  }, [currentStep, onboardingData, enqueueOnboardingSync]);
 
   const handleNext = () => {
     if (currentStep < totalSteps - 1) {
@@ -98,46 +106,100 @@ export const OnboardingFlow: React.FC = () => {
     }
   };
 
+  const handleSignOut = async () => {
+    if (signOutLock.current) return;
+
+    signOutLock.current = true;
+    setIsSigningOut(true);
+    setPersistenceError('');
+
+    const hasPendingAutosave = syncTimeout.current !== null;
+    if (syncTimeout.current) {
+      clearTimeout(syncTimeout.current);
+      syncTimeout.current = null;
+    }
+
+    try {
+      const latestSnapshot = { ...onboardingData, _currentStep: currentStep };
+      const latestSnapshotKey = JSON.stringify(latestSnapshot);
+      const hasOnboardingProgress = currentStep > 0 || Object.keys(onboardingData).length > 0;
+      if (
+        hasOnboardingProgress &&
+        (hasPendingAutosave || persistenceError || lastSyncedSnapshot.current !== latestSnapshotKey)
+      ) {
+        await enqueueOnboardingSync(latestSnapshot);
+        lastSyncedSnapshot.current = latestSnapshotKey;
+      }
+      await syncQueue.current;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Please try again.';
+      setPersistenceError(`Could not save onboarding progress. Sign out was canceled. ${message}`);
+      signOutLock.current = false;
+      setIsSigningOut(false);
+      return;
+    }
+
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      // The SIGNED_OUT session-manager handler clears local authenticated state.
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Please try again.';
+      setPersistenceError(`Sign out failed. You are still signed in. ${message}`);
+      signOutLock.current = false;
+      setIsSigningOut(false);
+    }
+  };
+
   const handleComplete = async () => {
+    if (isLoading) return;
     setIsLoading(true);
+    setPersistenceError('');
     
-    // Calculate readiness score
-    const readinessAnswers = onboardingData.readinessAnswers || {};
-    const totalScore = Object.values(readinessAnswers).reduce((sum, value) => sum + (value || 0), 0);
-    const maxScore = READINESS_QUESTIONS.length * 5;
-    const readinessScore = Math.round((totalScore / maxScore) * 100);
+    if (syncTimeout.current) {
+      clearTimeout(syncTimeout.current);
+      syncTimeout.current = null;
+    }
 
-    // Update local state
-    updateUser({
-      onboardingCompleted: true,
-      onboardingStep: totalSteps,
-      marriageIntention: onboardingData.marriageIntention,
-      commitmentLevel: onboardingData.commitmentLevel,
-      valuesAssessment: onboardingData.selectedValues || [],
-      readinessScore,
-    });
+    try {
+      // Finish earlier writes before the authoritative final snapshot is committed.
+      await syncQueue.current.catch(() => undefined);
+      const completedAt = new Date().toISOString();
+      const completedProfile = await completeOnboarding({
+        onboardingData: {
+          ...onboardingData,
+          _currentStep: totalSteps,
+          _completed: true,
+          _completedAt: completedAt,
+        },
+        marriageIntention: onboardingData.marriageIntention,
+        commitmentLevel: onboardingData.commitmentLevel,
+        valuesAssessment: onboardingData.selectedValues || [],
+        dateOfBirth: onboardingData.dateOfBirth,
+        gender: onboardingData.gender,
+        countryCode: onboardingData.countryCode,
+        city: onboardingData.city,
+        location: onboardingData.location,
+        locationCategory: onboardingData.locationCategory,
+        marriageTimeline: onboardingData.marriageTimeline,
+        partnerPreferences: onboardingData.partnerPreferences,
+      });
 
-    // Sync completion to database
-    await syncOnboardingComplete({
-      marriageIntention: onboardingData.marriageIntention,
-      commitmentLevel: onboardingData.commitmentLevel,
-      valuesAssessment: onboardingData.selectedValues || [],
-      readinessScore,
-      dateOfBirth: onboardingData.dateOfBirth,
-      gender: onboardingData.gender,
-      countryCode: onboardingData.countryCode,
-      city: onboardingData.city,
-      location: onboardingData.location,
-      locationCategory: onboardingData.locationCategory,
-      marriageTimeline: onboardingData.marriageTimeline,
-      partnerPreferences: onboardingData.partnerPreferences,
-    });
-
-    // Also sync the final onboarding data snapshot
-    await syncOnboardingData({ ...onboardingData, _completed: true, _completedAt: new Date().toISOString() });
-
-    setIsLoading(false);
-    setCurrentView('education');
+      updateUser({
+        onboardingCompleted: completedProfile.onboardingCompleted,
+        onboardingStep: completedProfile.onboardingStep,
+        gender: completedProfile.gender ?? undefined,
+        marriageIntention: completedProfile.marriageIntention ?? undefined,
+        commitmentLevel: completedProfile.commitmentLevel ?? undefined,
+        valuesAssessment: completedProfile.valuesAssessment,
+        readinessScore: completedProfile.readinessScore,
+      });
+      setCurrentView('education');
+    } catch (error: unknown) {
+      setPersistenceError(error instanceof Error ? error.message : 'Could not complete onboarding. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const renderStep = () => {
@@ -201,7 +263,21 @@ export const OnboardingFlow: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#faf6f1] py-8 px-4">
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-2xl mx-auto relative">
+        <div className="absolute right-0 top-0 z-10">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleSignOut}
+            isLoading={isSigningOut}
+            aria-label={isSigningOut ? 'Signing out' : 'Sign out'}
+          >
+            {isSigningOut ? 'Signing out…' : 'Sign out'}
+            {!isSigningOut && <LogOutIcon size={16} className="ml-2" />}
+          </Button>
+        </div>
+        <fieldset disabled={isSigningOut} className="m-0 min-w-0 border-0 p-0">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
@@ -259,6 +335,10 @@ export const OnboardingFlow: React.FC = () => {
             </Button>
           )}
         </div>
+        {persistenceError && (
+          <p className="mt-4 text-sm text-red-700" role="alert">{persistenceError}</p>
+        )}
+        </fieldset>
       </div>
     </div>
   );

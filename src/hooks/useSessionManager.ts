@@ -1,169 +1,107 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useAppStore, User } from '@/lib/store';
+import { IdentityLoadError, loadIdentity } from '@/lib/identity';
+import { useAppStore } from '@/lib/store';
 
-/**
- * Manages Supabase auth session persistence.
- * On page load, checks for an existing session and restores the user
- * from the database so they can pick up where they left off.
- */
+const getIdentityMessage = (error: unknown): string => {
+  if (error instanceof IdentityLoadError && error.kind === 'profile') {
+    return 'Your account is signed in, but its profile is missing. Please contact support.';
+  }
+  if (error instanceof IdentityLoadError && error.kind === 'roles') {
+    return 'Your account roles could not be verified. Please contact support.';
+  }
+  return 'We could not restore your account data. Please try again.';
+};
+
 export const useSessionManager = () => {
   const [isRestoring, setIsRestoring] = useState(true);
-  const { setUser, setCurrentView, user, isAuthenticated } = useAppStore();
-  const hasRestored = useRef(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const setAuthenticatedUser = useAppStore((state) => state.setAuthenticatedUser);
+  const clearUserSession = useAppStore((state) => state.clearUserSession);
+  const setCurrentView = useAppStore((state) => state.setCurrentView);
+  const requestVersion = useRef(0);
 
-  // Fetch user profile from the database
-  const fetchUserProfile = useCallback(async (userId: string, email: string, fallbackName?: string): Promise<User | null> => {
+  const applyAuthoritativeIdentity = useCallback(async (
+    authUser: { id: string; email?: string; user_metadata?: Record<string, unknown> },
+    version: number
+  ) => {
     try {
-      const { data: profileData, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single();
+      const identity = await loadIdentity(authUser);
+      if (requestVersion.current !== version) return;
 
-      if (error && error.code !== 'PGRST116') {
-        console.error('Error fetching user profile:', error);
+      setAuthenticatedUser(identity.user, identity.onboardingData);
+      setRestoreError(null);
+      if (!identity.user.onboardingCompleted) {
+        setCurrentView('onboarding');
+      } else if (useAppStore.getState().currentView === 'home' || useAppStore.getState().currentView === 'onboarding') {
+        setCurrentView('education');
       }
-
-      if (profileData) {
-        return {
-          id: userId,
-          email: profileData.email || email,
-          fullName: profileData.full_name || fallbackName || 'User',
-          profileImage: profileData.profile_image,
-          onboardingCompleted: profileData.onboarding_completed || false,
-          onboardingStep: profileData.onboarding_step || 0,
-          marriageIntention: profileData.marriage_intention,
-          commitmentLevel: profileData.commitment_level,
-          valuesAssessment: profileData.values_assessment || [],
-          readinessScore: profileData.readiness_score || 0,
-          matchmakingUnlocked: profileData.matchmaking_unlocked || false,
-          role: (profileData.role || 'user') as User['role'],
-        };
-      }
-
-      // No profile found - create a minimal one
-      return {
-        id: userId,
-        email,
-        fullName: fallbackName || 'User',
-        onboardingCompleted: false,
-        onboardingStep: 0,
-        valuesAssessment: [],
-        readinessScore: 0,
-        matchmakingUnlocked: false,
-        role: 'user',
-      };
-    } catch (err) {
-      console.error('Error in fetchUserProfile:', err);
-      return null;
+    } catch (error) {
+      if (requestVersion.current !== version) return;
+      clearUserSession();
+      setRestoreError(getIdentityMessage(error));
     }
-  }, []);
+  }, [clearUserSession, setAuthenticatedUser, setCurrentView]);
 
-  // Restore onboarding data from database
-  const restoreOnboardingData = useCallback(async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('user_onboarding_data')
-        .select('onboarding_data')
-        .eq('user_id', userId)
-        .single();
-
-      if (error && error.code !== 'PGRST116') {
-        console.error('Error fetching onboarding data:', error);
-        return null;
-      }
-
-      return data?.onboarding_data || null;
-    } catch (err) {
-      console.error('Error restoring onboarding data:', err);
-      return null;
-    }
-  }, []);
-
-  // Restore session on mount
   useEffect(() => {
-    if (hasRestored.current) return;
-    hasRestored.current = true;
+    let mounted = true;
 
     const restoreSession = async () => {
+      const version = ++requestVersion.current;
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
-
-        if (error) {
-          console.error('Session restore error:', error);
-          setIsRestoring(false);
-          return;
-        }
+        if (error) throw error;
+        if (!mounted || requestVersion.current !== version) return;
 
         if (session?.user) {
-          const authUser = session.user;
-          const userProfile = await fetchUserProfile(
-            authUser.id,
-            authUser.email || '',
-            authUser.user_metadata?.full_name
-          );
-
-          if (userProfile) {
-            setUser(userProfile);
-
-            // Restore onboarding data
-            const onboardingData = await restoreOnboardingData(authUser.id);
-            if (onboardingData) {
-              useAppStore.getState().setOnboardingData(onboardingData);
-            }
-
-            // Set the appropriate view based on user state
-            if (!userProfile.onboardingCompleted) {
-              setCurrentView('onboarding');
-            } else {
-              // Keep whatever view was persisted, or default to education
-              const currentView = useAppStore.getState().currentView;
-              if (currentView === 'home') {
-                setCurrentView('education');
-              }
-            }
-          }
+          await applyAuthoritativeIdentity(session.user, version);
+        } else {
+          clearUserSession();
+          setRestoreError(null);
         }
-      } catch (err) {
-        console.error('Session restoration failed:', err);
+      } catch (error) {
+        if (mounted && requestVersion.current === version) {
+          clearUserSession();
+          setRestoreError(getIdentityMessage(error));
+        }
       } finally {
-        setIsRestoring(false);
+        if (mounted) setIsRestoring(false);
       }
     };
 
-    restoreSession();
-  }, [fetchUserProfile, restoreOnboardingData, setUser, setCurrentView]);
+    void restoreSession();
+    return () => {
+      mounted = false;
+      requestVersion.current += 1;
+    };
+  }, [applyAuthoritativeIdentity, clearUserSession]);
 
-  // Listen for auth state changes (e.g., sign out from another tab)
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === 'SIGNED_OUT') {
-          useAppStore.getState().logout();
-        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-          // Session was refreshed, ensure user is still loaded
-          const currentUser = useAppStore.getState().user;
-          if (!currentUser) {
-            const userProfile = await fetchUserProfile(
-              session.user.id,
-              session.user.email || '',
-              session.user.user_metadata?.full_name
-            );
-            if (userProfile) {
-              setUser(userProfile);
-            }
-          }
-        }
+    let mounted = true;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        requestVersion.current += 1;
+        clearUserSession();
+        setRestoreError(null);
+        return;
       }
-    );
+
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
+        const version = ++requestVersion.current;
+        // Defer database reads until Supabase has returned from its auth callback.
+        window.setTimeout(() => {
+          if (mounted) void applyAuthoritativeIdentity(session.user, version);
+        }, 0);
+      }
+    });
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
-  }, [fetchUserProfile, setUser]);
+  }, [applyAuthoritativeIdentity, clearUserSession]);
 
-  return { isRestoring };
+  return { isRestoring, restoreError };
 };
 
 export default useSessionManager;

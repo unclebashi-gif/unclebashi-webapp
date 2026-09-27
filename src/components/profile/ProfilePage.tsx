@@ -25,6 +25,7 @@ export const ProfilePage: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [editData, setEditData] = useState({
     fullName: user?.fullName || '',
     bio: getOnboardingText('bio'),
@@ -35,24 +36,24 @@ export const ProfilePage: React.FC = () => {
   const handleSave = async () => {
     setIsSaving(true);
     setSaveSuccess(false);
-    
-    // Update local state
-    updateUser({ fullName: editData.fullName });
-    
-    // Sync to database
-    await syncProfileFields({
-      fullName: editData.fullName,
-      bio: editData.bio,
-      location: editData.location,
-      occupation: editData.occupation,
-    });
-    
-    setIsSaving(false);
-    setSaveSuccess(true);
-    setIsEditing(false);
-    
-    // Clear success message after 3 seconds
-    setTimeout(() => setSaveSuccess(false), 3000);
+    setSaveError('');
+
+    try {
+      await syncProfileFields({
+        fullName: editData.fullName,
+        bio: editData.bio,
+        location: editData.location,
+        occupation: editData.occupation,
+      });
+      updateUser({ fullName: editData.fullName });
+      setSaveSuccess(true);
+      setIsEditing(false);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (error: unknown) {
+      setSaveError(error instanceof Error ? error.message : 'Could not save profile changes.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const selectedValues = user?.valuesAssessment || [];
@@ -68,6 +69,11 @@ export const ProfilePage: React.FC = () => {
           <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-700 text-sm flex items-center animate-in fade-in slide-in-from-top-2">
             <CheckCircleIcon size={18} className="mr-2 flex-shrink-0" />
             Profile saved successfully! Your changes are synced across all devices.
+          </div>
+        )}
+        {saveError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm" role="alert">
+            {saveError}
           </div>
         )}
 

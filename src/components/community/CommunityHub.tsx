@@ -200,7 +200,7 @@ export const CommunityHub: React.FC = () => {
       id: Date.now().toString(),
       userId: user?.id || '',
       userName: isAnonymous ? 'Anonymous' : (user?.fullName || 'User'),
-      userImage: isAnonymous ? '' : (user?.profileImage || IMAGES.profiles.men[0]),
+      userImage: isAnonymous ? '' : (user?.profileImageUrl || IMAGES.profiles.men[0]),
       tier: selectedTier,
       content: newPostContent,
       isAnonymous,
