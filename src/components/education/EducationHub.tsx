@@ -3,18 +3,25 @@ import { useAppStore } from '@/lib/store';
 import { useCourseProgress } from '@/hooks/useCourseProgress';
 import { getAccessibleLessons, getPublishedCourseModules, getPublishedCourses } from '@/lib/educationService';
 import type { Course, CourseModule, Lesson } from '@/types/education';
+import { VideoPlayer } from '../video/VideoPlayer';
 import { Button } from '../ui/button';
 import { ProgressBar } from '../ui/ProgressBar';
 import { BookIcon, CheckCircleIcon, ClockIcon, PlayIcon } from '../ui/Icons';
 
 export const EducationHub: React.FC = () => {
   const userId = useAppStore((state) => state.user?.id ?? null);
+  const resumeTarget = useAppStore((state) => state.educationResumeTarget);
+  const setEducationResumeTarget = useAppStore((state) => state.setEducationResumeTarget);
   const {
     enrollments,
     getCourseProgress,
+    getLessonReflections,
     isLessonCompleted,
     enrollInFreeCourse,
     saveLessonProgress,
+    saveLessonReflection,
+    refreshProgress,
+    isLoading: progressLoading,
     error: progressError,
   } = useCourseProgress();
 
@@ -27,10 +34,14 @@ export const EducationHub: React.FC = () => {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
+  const [detailsLoadedCourseId, setDetailsLoadedCourseId] = useState<string | null>(null);
   const [enrollingCourseId, setEnrollingCourseId] = useState<string | null>(null);
   const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
   const [lessonSaveError, setLessonSaveError] = useState<string | null>(null);
   const [isSavingLesson, setIsSavingLesson] = useState(false);
+  const [reflectionSaveError, setReflectionSaveError] = useState<string | null>(null);
+  const [reflectionSaveSucceeded, setReflectionSaveSucceeded] = useState(false);
+  const [isSavingReflection, setIsSavingReflection] = useState(false);
 
   const activeEnrollment = useMemo(() => {
     if (!selectedCourse) return null;
@@ -64,10 +75,18 @@ export const EducationHub: React.FC = () => {
   }, [loadCatalog]);
 
   useEffect(() => {
+    if (!resumeTarget || catalogLoading || catalogError) return;
+    const course = courses.find((row) => row.id === resumeTarget.courseId);
+    if (course) setSelectedCourse(course);
+    else setEducationResumeTarget(null);
+  }, [catalogError, catalogLoading, courses, resumeTarget, setEducationResumeTarget]);
+
+  useEffect(() => {
     let current = true;
     if (!selectedCourse) {
       setModules([]);
       setLessons([]);
+      setDetailsLoadedCourseId(null);
       setDetailError(null);
       setDetailLoading(false);
       return () => { current = false; };
@@ -77,6 +96,7 @@ export const EducationHub: React.FC = () => {
     setDetailError(null);
     setModules([]);
     setLessons([]);
+    setDetailsLoadedCourseId(null);
     const courseId = selectedCourse.id;
     const canReadPaidContent = selectedCourse.is_free || enrollments.some(
       (enrollment) => enrollment.course_id === courseId && enrollment.status === 'active',
@@ -94,6 +114,7 @@ export const EducationHub: React.FC = () => {
           const orderDifference = (moduleOrder.get(a.module_id) ?? 0) - (moduleOrder.get(b.module_id) ?? 0);
           return orderDifference || a.display_order - b.display_order;
         }));
+        setDetailsLoadedCourseId(courseId);
       })
       .catch((error: unknown) => {
         if (current) setDetailError(error instanceof Error ? error.message : 'Unable to load this course.');
@@ -104,6 +125,15 @@ export const EducationHub: React.FC = () => {
 
     return () => { current = false; };
   }, [selectedCourse, enrollments]);
+
+  useEffect(() => {
+    if (!resumeTarget || !selectedCourse || detailsLoadedCourseId !== resumeTarget.courseId) return;
+    if (selectedCourse.id === resumeTarget.courseId) {
+      const lesson = lessons.find((row) => row.id === resumeTarget.lessonId);
+      if (lesson) setSelectedLesson(lesson);
+      setEducationResumeTarget(null);
+    }
+  }, [detailsLoadedCourseId, lessons, resumeTarget, selectedCourse, setEducationResumeTarget]);
 
   const handleEnroll = async (course: Course) => {
     if (!userId) {
@@ -144,16 +174,63 @@ export const EducationHub: React.FC = () => {
     }
   };
 
+  const handleReflectionSave = async (lesson: Lesson, response: string): Promise<void> => {
+    setReflectionSaveError(null);
+    setReflectionSaveSucceeded(false);
+    setIsSavingReflection(true);
+    try {
+      await saveLessonReflection(lesson.id, response);
+      setReflectionSaveSucceeded(true);
+    } catch (error) {
+      setReflectionSaveError(error instanceof Error ? error.message : 'Could not save your reflection.');
+    } finally {
+      setIsSavingReflection(false);
+    }
+  };
+
+  const handleVideoComplete = () => {
+    void refreshProgress().catch(() => {
+      // The hook exposes a visible progress error state.
+    });
+  };
+
+  const handleBackFromLesson = async () => {
+    try {
+      await refreshProgress();
+    } catch {
+      // The hook exposes a visible progress error on the course view.
+    }
+    setSelectedLesson(null);
+  };
+
+  useEffect(() => {
+    setReflectionSaveError(null);
+    setReflectionSaveSucceeded(false);
+  }, [selectedLesson?.id]);
+
   if (selectedLesson && selectedCourse) {
     return (
       <LessonContent
         course={selectedCourse}
         lesson={selectedLesson}
         completed={isLessonCompleted(selectedLesson.id)}
+        progressLoading={progressLoading}
+        progressError={progressError}
+        reflection={getLessonReflections(selectedLesson.id)[0] ?? null}
+        isSavingReflection={isSavingReflection}
+        reflectionSaveError={reflectionSaveError}
+        reflectionSaveSucceeded={reflectionSaveSucceeded}
         isSaving={isSavingLesson}
         saveError={lessonSaveError}
-        onBack={() => setSelectedLesson(null)}
+        onBack={() => void handleBackFromLesson()}
         onComplete={() => void handleArticleCompletion(selectedLesson)}
+        onSaveReflection={(response) => handleReflectionSave(selectedLesson, response)}
+        onVideoComplete={handleVideoComplete}
+        onRetryProgress={() => {
+          void refreshProgress().catch(() => {
+            // The hook exposes the retry failure as progressError.
+          });
+        }}
       />
     );
   }
@@ -338,11 +415,22 @@ const LessonContent: React.FC<{
   course: Course;
   lesson: Lesson;
   completed: boolean;
+  progressLoading: boolean;
+  progressError: string | null;
+  reflection: { response: string; updated_at: string } | null;
+  isSavingReflection: boolean;
+  reflectionSaveError: string | null;
+  reflectionSaveSucceeded: boolean;
   isSaving: boolean;
   saveError: string | null;
   onBack: () => void;
   onComplete: () => void;
-}> = ({ course, lesson, completed, isSaving, saveError, onBack, onComplete }) => (
+  onSaveReflection: (response: string) => Promise<void>;
+  onVideoComplete: () => void;
+  onRetryProgress: () => void;
+}> = ({ course, lesson, completed, progressLoading, progressError, reflection, isSavingReflection,
+  reflectionSaveError, reflectionSaveSucceeded, isSaving, saveError, onBack, onComplete,
+  onSaveReflection, onVideoComplete, onRetryProgress }) => (
   <main className="min-h-screen bg-[#faf6f1] py-8">
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
       <Button variant="ghost" onClick={onBack} className="mb-6">← Back to {course.title}</Button>
@@ -353,24 +441,28 @@ const LessonContent: React.FC<{
           {lesson.description && <p className="text-gray-600 mt-2">{lesson.description}</p>}
         </div>
         <div className="p-6">
-          {lesson.content_type === 'video' && lesson.media_url && (
-            <div>
-              <video controls className="w-full rounded-xl" src={lesson.media_url}>
-                Your browser does not support video playback.
-              </video>
-              <p className="text-sm text-gray-500 mt-3">Playback progress saving will be available in the next Education update.</p>
-            </div>
+          {lesson.content_type === 'video' && lesson.media_url?.trim() && (
+            <VideoPlayer videoUrl={lesson.media_url} lessonId={lesson.id} lessonTitle={lesson.title}
+              durationMinutes={lesson.duration_minutes} onComplete={onVideoComplete} />
           )}
           {lesson.content_type === 'article' && lesson.content_body && (
             <div className="prose max-w-none whitespace-pre-wrap text-gray-700">{lesson.content_body}</div>
           )}
-          {lesson.content_type === 'reflection' && lesson.reflection_prompts.length > 0 && (
-            <div className="space-y-3">
-              {lesson.reflection_prompts.map((prompt) => <p key={prompt} className="italic text-gray-600">“{prompt}”</p>)}
-              <p className="text-sm text-gray-500">Reflection saving will be available in the next Education update.</p>
-            </div>
+          {lesson.content_type === 'reflection' && (
+            <ReflectionEditor
+              lesson={lesson}
+              completed={completed}
+              isLoading={progressLoading}
+              loadError={progressError}
+              reflection={reflection}
+              isSaving={isSavingReflection}
+              saveError={reflectionSaveError}
+              saveSucceeded={reflectionSaveSucceeded}
+              onSave={onSaveReflection}
+              onRetry={onRetryProgress}
+            />
           )}
-          {((lesson.content_type === 'video' && !lesson.media_url)
+          {((lesson.content_type === 'video' && !lesson.media_url?.trim())
             || (lesson.content_type === 'article' && !lesson.content_body)) && (
             <div className="rounded-xl bg-[#faf6f1] p-6 text-center text-gray-600" role="status">
               This lesson’s content is being prepared.
@@ -390,6 +482,66 @@ const LessonContent: React.FC<{
     </div>
   </main>
 );
+
+const ReflectionEditor: React.FC<{
+  lesson: Lesson;
+  completed: boolean;
+  isLoading: boolean;
+  loadError: string | null;
+  reflection: { response: string; updated_at: string } | null;
+  isSaving: boolean;
+  saveError: string | null;
+  saveSucceeded: boolean;
+  onSave: (response: string) => Promise<void>;
+  onRetry: () => void;
+}> = ({ lesson, completed, isLoading, loadError, reflection, isSaving, saveError, saveSucceeded, onSave, onRetry }) => {
+  const [response, setResponse] = useState(reflection?.response ?? '');
+
+  useEffect(() => {
+    setResponse(reflection?.response ?? '');
+  }, [lesson.id, reflection?.response]);
+
+  const submit = async () => {
+    if (!response.trim() || isSaving) return;
+    await onSave(response);
+  };
+
+  if (isLoading) return <LoadingState label="Loading your private reflection…" />;
+  if (loadError) {
+    return (
+      <div className="space-y-3" role="alert">
+        <p className="text-sm text-red-700">Your reflection could not be loaded: {loadError}</p>
+        <Button variant="outline" onClick={onRetry}>Try again</Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {lesson.reflection_prompts.length > 0 ? (
+        <div className="space-y-3">
+          <h2 className="font-semibold text-[#1e3a5f]">Reflection prompts</h2>
+          {lesson.reflection_prompts.map((prompt) => <p key={prompt} className="italic text-gray-600">“{prompt}”</p>)}
+        </div>
+      ) : (
+        <p className="text-gray-600">Take a moment to reflect on this lesson.</p>
+      )}
+      <p className="text-sm text-gray-500">Your response is private to you.</p>
+      <label className="block">
+        <span className="sr-only">Your reflection</span>
+        <textarea value={response} onChange={(event) => setResponse(event.target.value)} rows={6}
+          className="w-full rounded-xl border border-gray-200 p-4 text-gray-700 focus:border-[#1e3a5f] focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/10"
+          placeholder="Write one response to these prompts…" />
+      </label>
+      {completed && <p className="text-sm text-emerald-700" role="status">Reflection lesson completed.</p>}
+      {saveSucceeded && <p className="text-sm text-emerald-700" role="status">Your reflection was saved.</p>}
+      {saveError && <p className="text-sm text-red-700" role="alert">{saveError}</p>}
+      <Button onClick={() => void submit()} disabled={!response.trim() || isSaving}>
+        {isSaving ? 'Saving…' : reflection ? 'Save changes' : 'Save reflection'}
+      </Button>
+    </div>
+  );
+};
 
 const LoadingState: React.FC<{ label: string }> = ({ label }) => (
   <div className="bg-white rounded-2xl p-8 shadow-sm text-center" role="status">

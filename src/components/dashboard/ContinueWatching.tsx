@@ -1,151 +1,79 @@
 import React, { useEffect, useState } from 'react';
 import { useAppStore } from '@/lib/store';
-import { useCourseProgress } from '@/hooks/useCourseProgress';
-import type { UserLessonProgress } from '@/types/education';
+import { getMyContinueWatchingEntries } from '@/lib/educationService';
+import type { ContinueWatchingEntry } from '@/types/education';
 import { Button } from '../ui/button';
 import { PlayIcon, ClockIcon, CheckCircleIcon, BookIcon } from '../ui/Icons';
-import { IMAGES } from '@/lib/constants';
 
+function formatTimeAgo(dateString: string): string {
+  const date = new Date(dateString);
+  const diffMs = Date.now() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
 
-// Course metadata for display
-const COURSE_METADATA: Record<string, { title: string; thumbnail: string }> = {
-  'free-overview': {
-    title: 'Marriage Preparation Overview',
-    thumbnail: IMAGES.hero,
-  },
-  'premium-full-course': {
-    title: 'Complete Pre-Marriage Course',
-    thumbnail: IMAGES.journey,
-  },
-  '11111111-1111-1111-1111-111111111111': {
-    title: 'Marriage Readiness Foundations',
-    thumbnail: IMAGES.journey,
-  },
-  '22222222-2222-2222-2222-222222222222': {
-    title: 'Character & Accountability',
-    thumbnail: IMAGES.journey,
-  },
-  '33333333-3333-3333-3333-333333333333': {
-    title: 'Communication Essentials',
-    thumbnail: IMAGES.community,
-  },
-};
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
+}
 
-// Lesson metadata for display
-const LESSON_METADATA: Record<string, { title: string; courseId: string }> = {
-  'overview-1': { title: 'Welcome to Uncle Bashi', courseId: 'free-overview' },
-  'overview-2': { title: 'The Journey Ahead', courseId: 'free-overview' },
-  'overview-3': { title: 'Your First Step', courseId: 'free-overview' },
-  'p1': { title: 'Understanding Your Values', courseId: 'premium-full-course' },
-  'p2': { title: 'Communication Foundations', courseId: 'premium-full-course' },
-  'p3': { title: 'Conflict Resolution', courseId: 'premium-full-course' },
-  'p4': { title: 'Financial Partnership', courseId: 'premium-full-course' },
-  'p5': { title: 'Family & Future Planning', courseId: 'premium-full-course' },
-  'p6': { title: 'Your Readiness Assessment', courseId: 'premium-full-course' },
-  '1': { title: 'Why Marriage?', courseId: '11111111-1111-1111-1111-111111111111' },
-  '2': { title: 'Self-Assessment', courseId: '11111111-1111-1111-1111-111111111111' },
-  '3': { title: 'Expectations vs Reality', courseId: '11111111-1111-1111-1111-111111111111' },
-  '4': { title: 'The Foundation of Integrity', courseId: '22222222-2222-2222-2222-222222222222' },
-  '5': { title: 'Taking Responsibility', courseId: '22222222-2222-2222-2222-222222222222' },
-  '6': { title: 'Active Listening', courseId: '33333333-3333-3333-3333-333333333333' },
-  '7': { title: 'Expressing Needs', courseId: '33333333-3333-3333-3333-333333333333' },
-};
-
-interface ContinueItem {
-  type: 'course' | 'lesson';
-  courseId: string;
-  lessonId?: string;
-  courseName: string;
-  lessonName?: string;
-  progress: number;
-  lastAccessed: string;
-  thumbnail: string;
+function formatPosition(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
 
 export const ContinueWatching: React.FC = () => {
-  const { setCurrentView, isAuthenticated } = useAppStore();
-  const { courseProgress, lessonProgress, isLoading, error } = useCourseProgress();
-  const [continueItems, setContinueItems] = useState<ContinueItem[]>([]);
+  const { isAuthenticated, user, setCurrentView, setEducationResumeTarget } = useAppStore();
+  const [entries, setEntries] = useState<ContinueWatchingEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(isAuthenticated);
+  const [error, setError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
-    if (isLoading) return;
+    let isCurrent = true;
+    if (!isAuthenticated) {
+      setEntries([]);
+      setError(null);
+      setIsLoading(false);
+      return () => { isCurrent = false; };
+    }
 
-    const items: ContinueItem[] = [];
-
-    // Find in-progress courses and their lessons
-    courseProgress.forEach((cp, courseId) => {
-      if (cp.status === 'in_progress') {
-        const courseMeta = COURSE_METADATA[courseId];
-        if (!courseMeta) return;
-
-        // Find the first incomplete lesson in this course
-        let firstIncompleteLesson: UserLessonProgress | null = null;
-        lessonProgress.forEach((lp, lessonId) => {
-          if (lp.course_id === courseId && !lp.is_completed) {
-            if (!firstIncompleteLesson || LESSON_METADATA[lessonId]) {
-              firstIncompleteLesson = lp;
-            }
-          }
-        });
-
-        if (firstIncompleteLesson) {
-          const lessonMeta = LESSON_METADATA[firstIncompleteLesson.lesson_id];
-          items.push({
-            type: 'lesson',
-            courseId,
-            lessonId: firstIncompleteLesson.lesson_id,
-            courseName: courseMeta.title,
-            lessonName: lessonMeta?.title || 'Continue Lesson',
-            progress: cp.progressPercentage,
-            lastAccessed: cp.updatedAt,
-            thumbnail: courseMeta.thumbnail,
-          });
-        } else {
-          items.push({
-            type: 'course',
-            courseId,
-            courseName: courseMeta.title,
-            progress: cp.progressPercentage,
-            lastAccessed: cp.updatedAt,
-            thumbnail: courseMeta.thumbnail,
-          });
+    setIsLoading(true);
+    setError(null);
+    void getMyContinueWatchingEntries()
+      .then((result) => {
+        if (isCurrent) setEntries(result);
+      })
+      .catch((loadError: unknown) => {
+        if (isCurrent) {
+          setEntries([]);
+          setError(loadError instanceof Error ? loadError.message : 'Unable to load your lesson progress.');
         }
-      }
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoading(false);
+      });
+
+    return () => { isCurrent = false; };
+  }, [isAuthenticated, user?.id, retryKey]);
+
+  const openEntry = (entry: ContinueWatchingEntry) => {
+    setEducationResumeTarget({
+      courseId: entry.course.id,
+      lessonId: entry.lesson.id,
+      positionSeconds: entry.lessonProgress.last_position_seconds,
     });
-
-    // Sort by last accessed
-    items.sort((a, b) => new Date(b.lastAccessed).getTime() - new Date(a.lastAccessed).getTime());
-
-    setContinueItems(items.slice(0, 3)); // Show max 3 items
-  }, [courseProgress, lessonProgress, isLoading]);
-
-  const formatTimeAgo = (dateString: string): string => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-  };
-
-  const handleContinue = (item: ContinueItem) => {
-    // Navigate to education hub - the course/lesson will be selected there
     setCurrentView('education');
   };
 
-  if (!isAuthenticated) {
-    return null;
-  }
+  if (!isAuthenticated) return null;
 
   if (isLoading) {
     return (
-      <div className="bg-white rounded-2xl p-6 shadow-sm">
+      <div className="bg-white rounded-2xl p-6 shadow-sm" role="status" aria-label="Loading lesson progress">
         <div className="animate-pulse">
           <div className="h-6 bg-gray-200 rounded w-48 mb-4" />
           <div className="h-24 bg-gray-200 rounded" />
@@ -154,20 +82,29 @@ export const ContinueWatching: React.FC = () => {
     );
   }
 
-  if (continueItems.length === 0) {
+  if (error) {
+    return (
+      <div className="bg-white rounded-2xl p-6 shadow-sm" role="alert">
+        <h3 className="text-lg font-bold text-[#1e3a5f] mb-2">Progress is unavailable</h3>
+        <p className="text-sm text-gray-600">{error}</p>
+        <Button variant="outline" className="mt-4" onClick={() => setRetryKey((key) => key + 1)}>
+          Try again
+        </Button>
+      </div>
+    );
+  }
+
+  if (entries.length === 0) {
     return (
       <div className="bg-gradient-to-r from-[#1e3a5f] to-[#2d4a6f] rounded-2xl p-6 text-white">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div>
-            <h3 className="text-xl font-bold mb-2">Start Your Journey</h3>
+            <h3 className="text-xl font-bold mb-2">Continue Your Learning</h3>
             <p className="text-white/80 mb-4">
-              Explore the courses currently available in Education.
+              Lessons you start will appear here when they are available.
             </p>
-            <Button
-              variant="secondary"
-              onClick={() => setCurrentView('education')}
-            >
-              <PlayIcon size={18} className="mr-2" />
+            <Button variant="secondary" onClick={() => setCurrentView('education')}>
+              <BookIcon size={18} className="mr-2" />
               Browse Education
             </Button>
           </div>
@@ -184,103 +121,64 @@ export const ContinueWatching: React.FC = () => {
   return (
     <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
       <div className="p-6 border-b border-gray-100">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xl font-bold text-[#1e3a5f]">Continue Where You Left Off</h3>
-          <button
-            onClick={() => setCurrentView('education')}
-            className="text-[#c4785a] hover:text-[#b36a4a] text-sm font-medium"
-          >
-            View All Courses
-          </button>
-        </div>
+        <h3 className="text-xl font-bold text-[#1e3a5f]">Continue Where You Left Off</h3>
       </div>
 
       <div className="divide-y divide-gray-100">
-        {continueItems.map((item, index) => (
-          <div
-            key={`${item.courseId}-${item.lessonId || 'course'}`}
-            className="p-4 hover:bg-gray-50 transition-colors cursor-pointer"
-            onClick={() => handleContinue(item)}
-          >
-            <div className="flex items-center space-x-4">
-              {/* Thumbnail */}
-              <div className="relative w-24 h-16 rounded-lg overflow-hidden flex-shrink-0">
-                <img
-                  src={item.thumbnail}
-                  alt={item.courseName}
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                  <div className="w-8 h-8 bg-white/90 rounded-full flex items-center justify-center">
-                    <PlayIcon size={16} className="text-[#1e3a5f] ml-0.5" />
+        {entries.map((entry) => {
+          const courseProgress = entry.courseProgress?.progress_percentage;
+          return (
+            <button
+              key={`${entry.course.id}-${entry.lesson.id}`}
+              type="button"
+              onClick={() => openEntry(entry)}
+              className="w-full p-4 text-left hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center space-x-4">
+                <div className="relative w-24 h-16 rounded-lg overflow-hidden flex-shrink-0 bg-[#1e3a5f] flex items-center justify-center">
+                  {entry.course.thumbnail_url ? (
+                    <img src={entry.course.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <BookIcon size={28} className="text-white/80" />
+                  )}
+                  <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+                    <div className="w-8 h-8 bg-white/90 rounded-full flex items-center justify-center">
+                      <PlayIcon size={16} className="text-[#1e3a5f] ml-0.5" />
+                    </div>
+                  </div>
+                  {courseProgress !== undefined && (
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/30">
+                      <div className="h-full bg-[#c4785a]" style={{ width: `${courseProgress}%` }} />
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-[#c4785a] font-medium uppercase tracking-wide mb-1">Continue lesson</p>
+                  <h4 className="font-semibold text-[#1e3a5f] truncate">{entry.lesson.title}</h4>
+                  <p className="text-sm text-gray-500 truncate">{entry.course.title} · {entry.module.title}</p>
+                  <div className="flex items-center space-x-3 mt-1 text-xs text-gray-400">
+                    <span className="flex items-center">
+                      <ClockIcon size={12} className="mr-1" />
+                      {formatTimeAgo(entry.lessonProgress.updated_at)}
+                    </span>
+                    <span>Resume at {formatPosition(entry.lessonProgress.last_position_seconds)}</span>
+                    {courseProgress !== undefined && <span>{Math.round(courseProgress)}% course progress</span>}
                   </div>
                 </div>
-                {/* Progress overlay */}
-                <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/30">
-                  <div
-                    className="h-full bg-[#c4785a]"
-                    style={{ width: `${item.progress}%` }}
-                  />
-                </div>
-              </div>
 
-              {/* Content */}
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-[#c4785a] font-medium uppercase tracking-wide mb-1">
-                  {item.type === 'lesson' ? 'Continue Lesson' : 'Continue Course'}
-                </p>
-                <h4 className="font-semibold text-[#1e3a5f] truncate">
-                  {item.type === 'lesson' ? item.lessonName : item.courseName}
-                </h4>
-                {item.type === 'lesson' && (
-                  <p className="text-sm text-gray-500 truncate">{item.courseName}</p>
-                )}
-                <div className="flex items-center space-x-3 mt-1 text-xs text-gray-400">
-                  <span className="flex items-center">
-                    <ClockIcon size={12} className="mr-1" />
-                    {formatTimeAgo(item.lastAccessed)}
-                  </span>
-                  <span>{Math.round(item.progress)}% complete</span>
-                </div>
-              </div>
-
-              {/* Action */}
-              <div className="flex-shrink-0">
-                <Button size="sm" variant="outline">
+                <span className="flex-shrink-0 rounded-lg border border-[#1e3a5f] px-3 py-2 text-sm font-medium text-[#1e3a5f]">
                   Resume
-                </Button>
+                </span>
               </div>
-            </div>
-          </div>
-        ))}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Quick stats */}
-      <div className="p-4 bg-[#faf6f1] border-t border-gray-100">
-        <div className="flex items-center justify-between text-sm">
-          <div className="flex items-center space-x-4">
-            <span className="text-gray-600">
-              <span className="font-semibold text-[#1e3a5f]">
-                {Array.from(courseProgress.values()).filter(c => c.status === 'completed').length}
-              </span>{' '}
-              courses completed
-            </span>
-            <span className="text-gray-600">
-              <span className="font-semibold text-[#1e3a5f]">
-                {Array.from(lessonProgress.values()).filter(l => l.is_completed).length}
-              </span>{' '}
-              lessons watched
-            </span>
-          </div>
-          {error ? (
-            <span className="text-red-700" role="status">Progress could not be loaded.</span>
-          ) : (
-            <span className="flex items-center text-emerald-600">
-              <CheckCircleIcon size={14} className="mr-1" />
-              Progress loaded
-            </span>
-          )}
-        </div>
+      <div className="p-4 bg-[#faf6f1] border-t border-gray-100 flex items-center gap-2 text-sm text-emerald-700">
+        <CheckCircleIcon size={14} />
+        Progress loaded from your account
       </div>
     </div>
   );

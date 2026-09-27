@@ -3,6 +3,7 @@ import type {
   Course,
   CourseEnrollment,
   CourseModule,
+  ContinueWatchingEntry,
   EnrollInFreeCourseResult,
   Lesson,
   LessonProgressSaveInput,
@@ -153,6 +154,67 @@ export async function getMyEducationState(): Promise<MyEducationState> {
     courseProgress: (courseResult.data ?? []) as UserCourseProgress[],
     reflections: (reflectionResult.data ?? []) as UserReflection[],
   };
+}
+
+export async function getMyContinueWatchingEntries(): Promise<ContinueWatchingEntry[]> {
+  const enrollments = (await getMyEnrollments()).filter((row) => row.status === 'active');
+  if (enrollments.length === 0) return [];
+
+  const enrollmentIds = enrollments.map((row) => row.id);
+  const courseIds = [...new Set(enrollments.map((row) => row.course_id))];
+  const [progressResult, summaryResult] = await Promise.all([
+    supabase.from('user_lesson_progress').select('*').in('enrollment_id', enrollmentIds)
+      .order('updated_at', { ascending: false }),
+    supabase.from('user_course_progress').select('*').in('enrollment_id', enrollmentIds),
+  ]);
+  if (progressResult.error) throwQueryError(progressResult.error);
+  if (summaryResult.error) throwQueryError(summaryResult.error);
+
+  const progressRows = (progressResult.data ?? []) as UserLessonProgress[];
+  const candidates = progressRows.filter((row) =>
+    !row.is_completed && (row.last_position_seconds > 0 || row.accumulated_watch_seconds > 0),
+  );
+  if (candidates.length === 0) return [];
+
+  const lessonIds = [...new Set(candidates.map((row) => row.lesson_id))];
+  const [courseResult, lessonResult] = await Promise.all([
+    supabase.from('courses').select('*').in('id', courseIds),
+    supabase.from('lessons').select('*').in('id', lessonIds).eq('status', 'published'),
+  ]);
+  if (courseResult.error) throwQueryError(courseResult.error);
+  if (lessonResult.error) throwQueryError(lessonResult.error);
+
+  const lessons = (lessonResult.data ?? []) as Lesson[];
+  const moduleIds = [...new Set(lessons.map((row) => row.module_id))];
+  if (moduleIds.length === 0) return [];
+
+  const moduleResult = await supabase.from('course_modules').select('*').in('id', moduleIds);
+  if (moduleResult.error) throwQueryError(moduleResult.error);
+
+  const enrollmentById = new Map(enrollments.map((row) => [row.id, row]));
+  const courseById = new Map(((courseResult.data ?? []) as Course[]).map((row) => [row.id, row]));
+  const lessonById = new Map(lessons.map((row) => [row.id, row]));
+  const moduleById = new Map(((moduleResult.data ?? []) as CourseModule[]).map((row) => [row.id, row]));
+  const summaryByEnrollment = new Map(
+    ((summaryResult.data ?? []) as UserCourseProgress[]).map((row) => [row.enrollment_id, row]),
+  );
+
+  return candidates.flatMap((lessonProgress) => {
+    const enrollment = enrollmentById.get(lessonProgress.enrollment_id);
+    const lesson = lessonById.get(lessonProgress.lesson_id);
+    if (!enrollment || !lesson || lesson.course_id !== enrollment.course_id) return [];
+    const course = courseById.get(enrollment.course_id);
+    const module = moduleById.get(lesson.module_id);
+    if (!course || !module || module.course_id !== enrollment.course_id) return [];
+
+    return [{
+      course,
+      module,
+      lesson,
+      lessonProgress,
+      courseProgress: summaryByEnrollment.get(enrollment.id) ?? null,
+    }];
+  });
 }
 
 export async function enrollInFreeCourse(courseId: string): Promise<EnrollInFreeCourseResult> {

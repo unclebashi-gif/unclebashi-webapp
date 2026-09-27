@@ -121,3 +121,11 @@ export interface SaveLessonReflectionResult {
   response: string;
   updated_at: string;
 }
+
+export interface ContinueWatchingEntry {
+  course: Course;
+  module: CourseModule;
+  lesson: Lesson;
+  lessonProgress: UserLessonProgress;
+  courseProgress: UserCourseProgress | null;
+}

@@ -21,19 +21,6 @@ export interface User {
   roles: UserRole[];
 }
 
-export interface Course {
-  id: string;
-  title: string;
-  description: string;
-  category: string;
-  durationMinutes: number;
-  orderIndex: number;
-  isRequired: boolean;
-  thumbnailUrl?: string;
-  progress?: number;
-  status?: 'not_started' | 'in_progress' | 'completed';
-}
-
 export interface JournalEntry {
   id: string;
   prompt: string;
@@ -81,16 +68,13 @@ interface AppState {
   // Navigation
   currentView: string;
   setCurrentView: (view: string) => void;
+  educationResumeTarget: { courseId: string; lessonId: string; positionSeconds: number } | null;
+  setEducationResumeTarget: (target: AppState['educationResumeTarget']) => void;
 
   // Onboarding
   onboardingData: Record<string, unknown>;
   setOnboardingData: (data: Record<string, unknown>) => void;
   updateOnboardingData: (updates: Record<string, unknown>) => void;
-
-  // Courses
-  courses: Course[];
-  setCourses: (courses: Course[]) => void;
-  updateCourseProgress: (courseId: string, progress: number, status: Course['status']) => void;
 
   // Journal
   journalEntries: JournalEntry[];
@@ -129,7 +113,7 @@ export const useAppStore = create<AppState>()(
           isAuthenticated: false,
           user: null,
           onboardingData: {},
-          courses: [],
+          educationResumeTarget: null,
           journalEntries: [],
           communityPosts: [],
           matchProfiles: [],
@@ -141,6 +125,8 @@ export const useAppStore = create<AppState>()(
       // Navigation
       currentView: 'home',
       setCurrentView: (view) => set({ currentView: view }),
+      educationResumeTarget: null,
+      setEducationResumeTarget: (target) => set({ educationResumeTarget: target }),
 
       // Onboarding
       onboardingData: {},
@@ -148,16 +134,6 @@ export const useAppStore = create<AppState>()(
       updateOnboardingData: (updates) =>
         set((state) => ({
           onboardingData: { ...state.onboardingData, ...updates },
-        })),
-
-      // Courses
-      courses: [],
-      setCourses: (courses) => set({ courses }),
-      updateCourseProgress: (courseId, progress, status) =>
-        set((state) => ({
-          courses: state.courses.map((c) =>
-            c.id === courseId ? { ...c, progress, status } : c
-          ),
         })),
 
       // Journal
@@ -187,9 +163,16 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'uncle-bashi-storage',
+      version: 1,
+      migrate: (persistedState: unknown) => {
+        const migratedState = persistedState && typeof persistedState === 'object'
+          ? { ...(persistedState as Record<string, unknown>) }
+          : {};
+        delete migratedState.courses;
+        return migratedState as Partial<AppState>;
+      },
       partialize: (state) => ({
         journalEntries: state.journalEntries,
-        courses: state.courses,
       }),
     }
   )

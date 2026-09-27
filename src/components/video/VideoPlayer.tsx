@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useCourseProgress } from '@/hooks/useCourseProgress';
+import { getMyLessonProgress, saveLessonProgress } from '@/lib/educationService';
+import type { UserLessonProgress } from '@/types/education';
 import { PlayIcon, CheckCircleIcon } from '../ui/Icons';
 
 interface YouTubePlayer {
@@ -94,7 +95,6 @@ interface VideoPlayerProps {
   lessonTitle: string;
   durationMinutes: number;
   onComplete: () => void;
-  isCompleted?: boolean;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -103,10 +103,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   lessonTitle,
   durationMinutes,
   onComplete,
-  isCompleted = false,
 }) => {
-  const { saveLessonProgress, getLessonProgress } = useCourseProgress();
-  
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
@@ -121,17 +118,39 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [hasStarted, setHasStarted] = useState(false);
-  const [markedComplete, setMarkedComplete] = useState(isCompleted);
+  const [serverProgress, setServerProgress] = useState<UserLessonProgress | null>(null);
+  const [isProgressLoading, setIsProgressLoading] = useState(true);
   const [showCompletionBanner, setShowCompletionBanner] = useState(false);
   const [isYouTube, setIsYouTube] = useState(false);
+  const [mediaError, setMediaError] = useState(false);
   const [youtubePlayer, setYoutubePlayer] = useState<YouTubePlayer | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [progressSaveError, setProgressSaveError] = useState<string | null>(null);
+  const durationRef = useRef(durationMinutes * 60);
+  durationRef.current = duration;
   
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const completionSaveInFlightRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const isPlayingRef = useRef(false);
+  const serverProgressRef = useRef<UserLessonProgress | null>(null);
+  const progressReadyRef = useRef(false);
+  const lastPlaybackSampleRef = useRef<number | null>(null);
+  const accumulatedWatchSecondsRef = useRef(0);
+  const latestPositionRef = useRef(0);
+  const latestSavedRef = useRef<{ position: number; accumulated: number } | null>(null);
+  const pendingSaveRef = useRef<{ position: number; accumulated: number } | null>(null);
+  const saveLoopRef = useRef<Promise<void> | null>(null);
+  const youtubePlayerRef = useRef<YouTubePlayer | null>(null);
+  const onCompleteRef = useRef(onComplete);
+  const markedComplete = serverProgress?.is_completed ?? false;
+  const latestProgressIsSaved = Boolean(
+    lastSyncTime && !progressSaveError && latestSavedRef.current
+      && Math.floor(latestPositionRef.current) === latestSavedRef.current.position
+      && Math.floor(accumulatedWatchSecondsRef.current) <= latestSavedRef.current.accumulated,
+  );
+
+  onCompleteRef.current = onComplete;
 
   // Extract YouTube video ID
   const getYouTubeId = (url: string): string | null => {
@@ -142,94 +161,157 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const youtubeId = getYouTubeId(videoUrl);
 
-  // Load saved progress from database on mount
   useEffect(() => {
-    const loadProgress = async () => {
-      const dbProgress = getLessonProgress(lessonId);
-      
-      if (dbProgress) {
-        setCurrentTime(dbProgress.last_position_seconds || 0);
-        setProgress(duration > 0 ? (dbProgress.last_position_seconds / duration) * 100 : 0);
-        if (dbProgress.is_completed) {
-          setMarkedComplete(true);
+    setMediaError(false);
+  }, [videoUrl]);
+
+  // Load the caller's server progress before restoring playback.
+  useEffect(() => {
+    let isCurrent = true;
+    progressReadyRef.current = false;
+    setIsProgressLoading(true);
+    setProgressSaveError(null);
+    setServerProgress(null);
+    serverProgressRef.current = null;
+    latestSavedRef.current = null;
+    accumulatedWatchSecondsRef.current = 0;
+    latestPositionRef.current = 0;
+
+    void getMyLessonProgress()
+      .then((rows) => {
+        if (!isCurrent) return;
+        const row = rows.find((item) => item.lesson_id === lessonId) ?? null;
+        serverProgressRef.current = row;
+        setServerProgress(row);
+        const position = row?.last_position_seconds ?? 0;
+        latestPositionRef.current = position;
+        accumulatedWatchSecondsRef.current = row?.accumulated_watch_seconds ?? 0;
+        latestSavedRef.current = row ? {
+          position,
+          accumulated: row.accumulated_watch_seconds,
+        } : null;
+        setCurrentTime(position);
+        const storedDurationSeconds = durationMinutes * 60;
+        setProgress(storedDurationSeconds > 0 ? Math.min(100, (position / storedDurationSeconds) * 100) : 0);
+        progressReadyRef.current = true;
+
+        if (videoRef.current && videoRef.current.readyState >= 1) {
+          videoRef.current.currentTime = position;
         }
-      }
-    };
-    
-    loadProgress();
-  }, [lessonId, getLessonProgress, duration]);
-
-  // Save progress to database periodically
-  useEffect(() => {
-    const saveToDatabase = async () => {
-      if (!hasStarted) return;
-      
-      setIsSyncing(true);
-      
-      // Save to database
-      await saveLessonProgress(
-        {
-          lessonId,
-          lastPositionSeconds: Math.floor(currentTime),
-          accumulatedWatchSeconds: Math.floor(currentTime),
-          articleCompletionRequested: false,
-        },
-      );
-      
-      setProgressSaveError(null);
-      setLastSyncTime(new Date());
-      setTimeout(() => setIsSyncing(false), 500);
-    };
-
-    const saveWithErrorHandling = async () => {
-      try {
-        await saveToDatabase();
-      } catch (error) {
-        setProgressSaveError(error instanceof Error ? error.message : 'Could not save video progress.');
-        setIsSyncing(false);
-      }
-    };
-
-    // Save every 10 seconds while watching
-    saveIntervalRef.current = setInterval(() => { void saveWithErrorHandling(); }, 10000);
-    
-    return () => {
-      if (saveIntervalRef.current) {
-        clearInterval(saveIntervalRef.current);
-      }
-      // Save on unmount
-      void saveWithErrorHandling();
-    };
-  }, [currentTime, progress, markedComplete, hasStarted, lessonId, duration, saveLessonProgress]);
-
-  // Check for 90% completion
-  useEffect(() => {
-    if (progress >= 90 && !markedComplete && !completionSaveInFlightRef.current) {
-      completionSaveInFlightRef.current = true;
-      setIsSyncing(true);
-      void saveLessonProgress({
-        lessonId,
-        lastPositionSeconds: Math.floor(currentTime),
-        accumulatedWatchSeconds: Math.floor(currentTime),
-        articleCompletionRequested: false,
+        if (youtubePlayerRef.current) youtubePlayerRef.current.seekTo(position, true);
       })
-        .then(() => {
-          setMarkedComplete(true);
-          setProgressSaveError(null);
-          setLastSyncTime(new Date());
-          setShowCompletionBanner(true);
-          onComplete();
-          setTimeout(() => setShowCompletionBanner(false), 5000);
-        })
-        .catch((error: unknown) => {
-          setProgressSaveError(error instanceof Error ? error.message : 'Could not complete this lesson.');
-        })
-        .finally(() => {
-          completionSaveInFlightRef.current = false;
-          setIsSyncing(false);
-        });
+      .catch((loadError: unknown) => {
+        if (isCurrent) {
+          setProgressSaveError(loadError instanceof Error ? loadError.message : 'Could not load saved lesson progress.');
+        }
+      })
+      .finally(() => {
+        if (isCurrent) setIsProgressLoading(false);
+      });
+
+    return () => { isCurrent = false; };
+  }, [lessonId, durationMinutes]);
+
+  const saveLatestProgress = useCallback(async () => {
+    if (!progressReadyRef.current || serverProgressRef.current?.is_completed) return;
+
+    const durationLimit = Math.max(0, Math.floor(durationMinutes * 60));
+    const snapshot = {
+      position: Math.min(durationLimit, Math.max(0, Math.floor(latestPositionRef.current))),
+      accumulated: Math.min(durationLimit, Math.max(0, Math.floor(accumulatedWatchSecondsRef.current))),
+    };
+    const lastSaved = latestSavedRef.current;
+    if (snapshot.position === 0 && snapshot.accumulated === 0) return;
+    if (lastSaved && snapshot.position === lastSaved.position && snapshot.accumulated <= lastSaved.accumulated) return;
+
+    pendingSaveRef.current = snapshot;
+    if (!saveLoopRef.current) {
+      const drain = async () => {
+        while (pendingSaveRef.current) {
+          const next = pendingSaveRef.current;
+          pendingSaveRef.current = null;
+          const alreadySaved = latestSavedRef.current;
+          if (alreadySaved && next.position <= alreadySaved.position && next.accumulated <= alreadySaved.accumulated) {
+            continue;
+          }
+          if (isMountedRef.current) setIsSyncing(true);
+
+          try {
+            await saveLessonProgress({
+              lessonId,
+              lastPositionSeconds: next.position,
+              accumulatedWatchSeconds: next.accumulated,
+              articleCompletionRequested: false,
+            });
+            const rows = await getMyLessonProgress();
+            const authoritativeRow = rows.find((row) => row.lesson_id === lessonId) ?? null;
+            if (!authoritativeRow) throw new Error('Progress was saved, but the authoritative lesson state could not be loaded.');
+
+            const wasComplete = serverProgressRef.current?.is_completed ?? false;
+            latestSavedRef.current = next;
+            serverProgressRef.current = authoritativeRow;
+            if (isMountedRef.current) {
+              setServerProgress(authoritativeRow);
+              setProgressSaveError(null);
+              setLastSyncTime(new Date());
+              if (!wasComplete && authoritativeRow.is_completed) {
+                setShowCompletionBanner(true);
+                onCompleteRef.current();
+                window.setTimeout(() => {
+                  if (isMountedRef.current) setShowCompletionBanner(false);
+                }, 5000);
+              }
+            }
+          } catch (saveError) {
+            if (isMountedRef.current) {
+              setProgressSaveError(saveError instanceof Error ? saveError.message : 'Could not save video progress.');
+            }
+            if (!pendingSaveRef.current) break;
+          } finally {
+            if (isMountedRef.current && !pendingSaveRef.current) setIsSyncing(false);
+          }
+        }
+      };
+
+      const drainPromise = drain();
+      saveLoopRef.current = drainPromise;
+      void drainPromise.finally(() => {
+        if (saveLoopRef.current === drainPromise) saveLoopRef.current = null;
+        if (pendingSaveRef.current && isMountedRef.current) void saveLatestProgress();
+      });
     }
-  }, [progress, markedComplete, onComplete, currentTime, lessonId, saveLessonProgress]);
+
+    await saveLoopRef.current;
+  }, [durationMinutes, lessonId]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      void saveLatestProgress();
+    };
+  }, [saveLatestProgress]);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    const interval = window.setInterval(() => { void saveLatestProgress(); }, 10000);
+    return () => window.clearInterval(interval);
+  }, [isPlaying, saveLatestProgress]);
+
+  const updatePlaybackSnapshot = useCallback((position: number, mediaDuration?: number) => {
+    const totalDuration = mediaDuration ?? durationRef.current;
+    const now = Date.now();
+    if (isPlayingRef.current && lastPlaybackSampleRef.current !== null) {
+      const elapsedSeconds = (now - lastPlaybackSampleRef.current) / 1000;
+      if (elapsedSeconds > 0 && elapsedSeconds <= 5) {
+        accumulatedWatchSecondsRef.current += Math.min(elapsedSeconds, 2);
+      }
+    }
+    lastPlaybackSampleRef.current = now;
+    latestPositionRef.current = Math.max(0, position);
+    setCurrentTime(position);
+    setProgress(totalDuration > 0 ? Math.min(100, (position / totalDuration) * 100) : 0);
+  }, []);
 
   // Handle controls visibility
   const showControlsTemporarily = useCallback(() => {
@@ -268,19 +350,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     if (videoRef.current) {
       const current = videoRef.current.currentTime;
       const total = videoRef.current.duration || duration;
-      setCurrentTime(current);
-      setProgress((current / total) * 100);
+      updatePlaybackSnapshot(current, total);
     }
   };
 
   const handleLoadedMetadata = () => {
     if (videoRef.current) {
-      setDuration(videoRef.current.duration);
+      const mediaDuration = videoRef.current.duration;
+      if (Number.isFinite(mediaDuration) && mediaDuration > 0) setDuration(mediaDuration);
       
-      // Resume from saved position
-      const dbProgress = getLessonProgress(lessonId);
-      if (dbProgress && dbProgress.last_position_seconds && dbProgress.last_position_seconds < videoRef.current.duration * 0.95) {
-        videoRef.current.currentTime = dbProgress.last_position_seconds;
+      // Restore only from the authenticated server row.
+      const savedPosition = serverProgressRef.current?.last_position_seconds;
+      if (progressReadyRef.current && savedPosition !== undefined && savedPosition < mediaDuration) {
+        videoRef.current.currentTime = savedPosition;
       }
     }
   };
@@ -294,6 +376,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   const togglePlay = () => {
+    if (isProgressLoading || !progressReadyRef.current) return;
     if (!hasStarted) setHasStarted(true);
     
     if (youtubePlayer) {
@@ -321,6 +404,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const clickX = e.clientX - rect.left;
     const percentage = (clickX / rect.width) * 100;
     const newTime = (percentage / 100) * duration;
+    lastPlaybackSampleRef.current = Date.now();
+    latestPositionRef.current = newTime;
     
     if (youtubePlayer) {
       youtubePlayer.seekTo(newTime, true);
@@ -329,7 +414,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
     
     setCurrentTime(newTime);
-    setProgress(percentage);
+    setProgress(Math.min(100, percentage));
   };
 
   const toggleMute = () => {
@@ -365,6 +450,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       videoRef.current.currentTime = 0;
       videoRef.current.play();
     }
+    isPlayingRef.current = true;
+    lastPlaybackSampleRef.current = Date.now();
+    latestPositionRef.current = 0;
     setIsPlaying(true);
     setCurrentTime(0);
     setProgress(0);
@@ -404,18 +492,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           events: {
             onReady: (event) => {
               setYoutubePlayer(event.target);
-              setDuration(event.target.getDuration());
-              
-              // Resume from saved position
-              const dbProgress = getLessonProgress(lessonId);
-              if (dbProgress && dbProgress.last_position_seconds && dbProgress.last_position_seconds < event.target.getDuration() * 0.95) {
-                event.target.seekTo(dbProgress.last_position_seconds, true);
+              youtubePlayerRef.current = event.target;
+              const mediaDuration = event.target.getDuration();
+              if (Number.isFinite(mediaDuration) && mediaDuration > 0) setDuration(mediaDuration);
+              const savedPosition = serverProgressRef.current?.last_position_seconds;
+              if (progressReadyRef.current && savedPosition !== undefined && savedPosition < mediaDuration) {
+                event.target.seekTo(savedPosition, true);
               }
             },
             onStateChange: (event) => {
-              setIsPlaying(event.data === 1);
-              if (event.data === 1) {
+              const nowPlaying = event.data === 1;
+              const wasPlaying = isPlayingRef.current;
+              if (event.data === 5 || event.data === 100 || event.data === 101 || event.data === 150) {
+                setMediaError(true);
+              }
+              isPlayingRef.current = nowPlaying;
+              setIsPlaying(nowPlaying);
+              if (nowPlaying) {
                 setHasStarted(true);
+                lastPlaybackSampleRef.current = Date.now();
+              } else if (wasPlaying) {
+                updatePlaybackSnapshot(event.target.getCurrentTime(), event.target.getDuration());
+                void saveLatestProgress();
+                lastPlaybackSampleRef.current = null;
               }
             },
           },
@@ -427,7 +526,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         youtubeWindow.onYouTubeIframeAPIReady();
       }
     }
-  }, [youtubeId, lessonId, getLessonProgress]);
+  }, [youtubeId, lessonId, saveLatestProgress, updatePlaybackSnapshot]);
 
   // YouTube progress tracking
   useEffect(() => {
@@ -436,12 +535,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const interval = setInterval(() => {
       const current = youtubePlayer.getCurrentTime();
       const total = youtubePlayer.getDuration();
-      setCurrentTime(current);
-      setProgress((current / total) * 100);
+      updatePlaybackSnapshot(current, total);
     }, 500);
 
     return () => clearInterval(interval);
-  }, [youtubePlayer, isPlaying]);
+  }, [youtubePlayer, isPlaying, updatePlaybackSnapshot]);
+
+  if (!videoUrl.trim() || mediaError) {
+    return (
+      <div className="aspect-video rounded-xl bg-[#faf6f1] p-8 flex items-center justify-center text-center text-gray-600" role="status">
+        {mediaError ? 'This lesson’s media is temporarily unavailable.' : 'This lesson’s video is being prepared.'}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -459,12 +565,30 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         <video
           ref={videoRef}
           className="w-full h-full object-contain"
+          onError={() => setMediaError(true)}
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
           onProgress={handleProgress}
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
-          onEnded={() => setIsPlaying(false)}
+          onPlay={() => {
+            isPlayingRef.current = true;
+            lastPlaybackSampleRef.current = Date.now();
+            setIsPlaying(true);
+          }}
+          onPause={() => {
+            const wasPlaying = isPlayingRef.current;
+            if (wasPlaying && videoRef.current) updatePlaybackSnapshot(videoRef.current.currentTime, videoRef.current.duration || duration);
+            isPlayingRef.current = false;
+            lastPlaybackSampleRef.current = null;
+            setIsPlaying(false);
+            if (wasPlaying) void saveLatestProgress();
+          }}
+          onEnded={() => {
+            if (videoRef.current) updatePlaybackSnapshot(videoRef.current.currentTime, videoRef.current.duration || duration);
+            isPlayingRef.current = false;
+            lastPlaybackSampleRef.current = null;
+            setIsPlaying(false);
+            void saveLatestProgress();
+          }}
         >
           <source src={videoUrl} type="video/mp4" />
           Your browser does not support the video tag.
@@ -504,25 +628,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         <div className="absolute top-0 inset-x-0 p-4 flex items-center justify-between">
           <h3 className="text-white font-medium truncate">{lessonTitle}</h3>
           <div className="flex items-center space-x-2">
+            {isProgressLoading && <span className="text-white/70 text-xs">Loading saved progress…</span>}
             {isSyncing && (
               <span className="flex items-center text-white/70 text-xs">
                 <SyncIcon size={14} className="mr-1 animate-spin" />
                 Syncing...
               </span>
             )}
-            {lastSyncTime && !isSyncing && (
+            {latestProgressIsSaved && !isSyncing && (
               <span className="text-white/50 text-xs">
                 Saved
               </span>
             )}
           </div>
         </div>
-        {progressSaveError && (
-          <p className="absolute top-12 right-4 max-w-xs rounded bg-red-950/90 px-3 py-2 text-xs text-white" role="alert">
-            Progress could not be saved: {progressSaveError}
-          </p>
-        )}
-
         {/* Center play/pause button */}
         <div
           className="absolute inset-0 flex items-center justify-center cursor-pointer"
@@ -561,12 +680,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               style={{ left: `calc(${progress}% - 8px)` }}
             />
             
-            {/* 90% completion marker */}
-            <div
-              className="absolute top-1/2 -translate-y-1/2 w-1 h-4 bg-emerald-400 rounded-full"
-              style={{ left: '90%' }}
-              title="90% - Auto-complete point"
-            />
           </div>
 
           {/* Control buttons */}
@@ -639,6 +752,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       </div>
 
+      {progressSaveError && (
+        <p className="absolute bottom-3 left-3 right-3 z-20 rounded bg-red-950/95 px-3 py-2 text-sm text-white" role="alert">
+          {progressSaveError}
+        </p>
+      )}
+
       {/* Completion banner */}
       {showCompletionBanner && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-emerald-500 text-white px-6 py-3 rounded-full shadow-lg flex items-center space-x-2 animate-bounce">
@@ -647,12 +766,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* 90% marker tooltip */}
-      {progress >= 85 && progress < 90 && !markedComplete && (
-        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-[#1e3a5f] text-white px-4 py-2 rounded-lg text-sm shadow-lg">
-          Almost there! Watch to 90% to complete this lesson.
-        </div>
-      )}
     </div>
   );
 };
