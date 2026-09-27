@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAppStore } from '@/lib/store';
-import { useCourseProgress, LessonProgress } from '@/hooks/useCourseProgress';
+import { useCourseProgress } from '@/hooks/useCourseProgress';
+import type { UserLessonProgress } from '@/types/education';
 import { Button } from '../ui/button';
 import { PlayIcon, ClockIcon, CheckCircleIcon, BookIcon } from '../ui/Icons';
 import { IMAGES } from '@/lib/constants';
@@ -63,7 +64,7 @@ interface ContinueItem {
 
 export const ContinueWatching: React.FC = () => {
   const { setCurrentView, isAuthenticated } = useAppStore();
-  const { courseProgress, lessonProgress, isLoading } = useCourseProgress();
+  const { courseProgress, lessonProgress, isLoading, error } = useCourseProgress();
   const [continueItems, setContinueItems] = useState<ContinueItem[]>([]);
 
   useEffect(() => {
@@ -78,9 +79,9 @@ export const ContinueWatching: React.FC = () => {
         if (!courseMeta) return;
 
         // Find the first incomplete lesson in this course
-        let firstIncompleteLesson: LessonProgress | null = null;
+        let firstIncompleteLesson: UserLessonProgress | null = null;
         lessonProgress.forEach((lp, lessonId) => {
-          if (lp.courseId === courseId && !lp.isCompleted) {
+          if (lp.course_id === courseId && !lp.is_completed) {
             if (!firstIncompleteLesson || LESSON_METADATA[lessonId]) {
               firstIncompleteLesson = lp;
             }
@@ -88,15 +89,15 @@ export const ContinueWatching: React.FC = () => {
         });
 
         if (firstIncompleteLesson) {
-          const lessonMeta = LESSON_METADATA[firstIncompleteLesson.lessonId];
+          const lessonMeta = LESSON_METADATA[firstIncompleteLesson.lesson_id];
           items.push({
             type: 'lesson',
             courseId,
-            lessonId: firstIncompleteLesson.lessonId,
+            lessonId: firstIncompleteLesson.lesson_id,
             courseName: courseMeta.title,
             lessonName: lessonMeta?.title || 'Continue Lesson',
-            progress: firstIncompleteLesson.watchProgress,
-            lastAccessed: cp.lastAccessed,
+            progress: cp.progressPercentage,
+            lastAccessed: cp.updatedAt,
             thumbnail: courseMeta.thumbnail,
           });
         } else {
@@ -104,8 +105,8 @@ export const ContinueWatching: React.FC = () => {
             type: 'course',
             courseId,
             courseName: courseMeta.title,
-            progress: cp.progress,
-            lastAccessed: cp.lastAccessed,
+            progress: cp.progressPercentage,
+            lastAccessed: cp.updatedAt,
             thumbnail: courseMeta.thumbnail,
           });
         }
@@ -160,14 +161,14 @@ export const ContinueWatching: React.FC = () => {
           <div>
             <h3 className="text-xl font-bold mb-2">Start Your Journey</h3>
             <p className="text-white/80 mb-4">
-              Begin with our FREE 10-minute overview course and discover the path to a fulfilling marriage.
+              Explore the courses currently available in Education.
             </p>
             <Button
               variant="secondary"
               onClick={() => setCurrentView('education')}
             >
               <PlayIcon size={18} className="mr-2" />
-              Start Free Course
+              Browse Education
             </Button>
           </div>
           <div className="hidden md:block">
@@ -266,15 +267,19 @@ export const ContinueWatching: React.FC = () => {
             </span>
             <span className="text-gray-600">
               <span className="font-semibold text-[#1e3a5f]">
-                {Array.from(lessonProgress.values()).filter(l => l.isCompleted).length}
+                {Array.from(lessonProgress.values()).filter(l => l.is_completed).length}
               </span>{' '}
               lessons watched
             </span>
           </div>
-          <span className="flex items-center text-emerald-600">
-            <CheckCircleIcon size={14} className="mr-1" />
-            Progress synced
-          </span>
+          {error ? (
+            <span className="text-red-700" role="status">Progress could not be loaded.</span>
+          ) : (
+            <span className="flex items-center text-emerald-600">
+              <CheckCircleIcon size={14} className="mr-1" />
+              Progress loaded
+            </span>
+          )}
         </div>
       </div>
     </div>

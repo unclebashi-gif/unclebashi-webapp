@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useAppStore } from '@/lib/store';
 import { useCourseProgress } from '@/hooks/useCourseProgress';
 import { PlayIcon, CheckCircleIcon } from '../ui/Icons';
 
@@ -96,8 +95,6 @@ interface VideoPlayerProps {
   durationMinutes: number;
   onComplete: () => void;
   isCompleted?: boolean;
-  courseId: string;
-  readinessBonus?: number;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -107,10 +104,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   durationMinutes,
   onComplete,
   isCompleted = false,
-  courseId,
-  readinessBonus = 5,
 }) => {
-  const { user, updateUser } = useAppStore();
   const { saveLessonProgress, getLessonProgress } = useCourseProgress();
   
   const containerRef = useRef<HTMLDivElement>(null);
@@ -133,10 +127,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [youtubePlayer, setYoutubePlayer] = useState<YouTubePlayer | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [progressSaveError, setProgressSaveError] = useState<string | null>(null);
   
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const progressStorageKey = `video-progress-${lessonId}`;
+  const completionSaveInFlightRef = useRef(false);
 
   // Extract YouTube video ID
   const getYouTubeId = (url: string): string | null => {
@@ -153,30 +148,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       const dbProgress = getLessonProgress(lessonId);
       
       if (dbProgress) {
-        setCurrentTime(dbProgress.lastPosition || 0);
-        setProgress(dbProgress.watchProgress || 0);
-        if (dbProgress.isCompleted) {
+        setCurrentTime(dbProgress.last_position_seconds || 0);
+        setProgress(duration > 0 ? (dbProgress.last_position_seconds / duration) * 100 : 0);
+        if (dbProgress.is_completed) {
           setMarkedComplete(true);
-        }
-        if (dbProgress.totalDurationSeconds) {
-          setDuration(dbProgress.totalDurationSeconds);
-        }
-      } else {
-        // Fallback to localStorage for offline support
-        const savedProgress = localStorage.getItem(progressStorageKey);
-        if (savedProgress) {
-          const parsed = JSON.parse(savedProgress);
-          setCurrentTime(parsed.currentTime || 0);
-          setProgress(parsed.progress || 0);
-          if (parsed.markedComplete) {
-            setMarkedComplete(true);
-          }
         }
       }
     };
     
     loadProgress();
-  }, [lessonId, getLessonProgress, progressStorageKey]);
+  }, [lessonId, getLessonProgress, duration]);
 
   // Save progress to database periodically
   useEffect(() => {
@@ -185,79 +166,70 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       
       setIsSyncing(true);
       
-      // Save to localStorage for offline support
-      localStorage.setItem(progressStorageKey, JSON.stringify({
-        currentTime,
-        progress,
-        markedComplete,
-        lastUpdated: new Date().toISOString(),
-      }));
-      
       // Save to database
       await saveLessonProgress(
-        lessonId,
-        courseId,
-        progress,
-        currentTime,
-        duration,
-        markedComplete,
-        markedComplete ? readinessBonus : 0
+        {
+          lessonId,
+          lastPositionSeconds: Math.floor(currentTime),
+          accumulatedWatchSeconds: Math.floor(currentTime),
+          articleCompletionRequested: false,
+        },
       );
       
+      setProgressSaveError(null);
       setLastSyncTime(new Date());
       setTimeout(() => setIsSyncing(false), 500);
     };
 
+    const saveWithErrorHandling = async () => {
+      try {
+        await saveToDatabase();
+      } catch (error) {
+        setProgressSaveError(error instanceof Error ? error.message : 'Could not save video progress.');
+        setIsSyncing(false);
+      }
+    };
+
     // Save every 10 seconds while watching
-    saveIntervalRef.current = setInterval(saveToDatabase, 10000);
+    saveIntervalRef.current = setInterval(() => { void saveWithErrorHandling(); }, 10000);
     
     return () => {
       if (saveIntervalRef.current) {
         clearInterval(saveIntervalRef.current);
       }
       // Save on unmount
-      saveToDatabase();
+      void saveWithErrorHandling();
     };
-  }, [currentTime, progress, markedComplete, hasStarted, lessonId, courseId, duration, readinessBonus, saveLessonProgress, progressStorageKey]);
+  }, [currentTime, progress, markedComplete, hasStarted, lessonId, duration, saveLessonProgress]);
 
   // Check for 90% completion
   useEffect(() => {
-    if (progress >= 90 && !markedComplete) {
-      setMarkedComplete(true);
-      setShowCompletionBanner(true);
-      
-      // Update readiness score locally
-      if (user && readinessBonus > 0) {
-        const newScore = Math.min(100, (user.readinessScore || 0) + readinessBonus);
-        updateUser({ readinessScore: newScore });
-      }
-      
-      // Trigger completion callback
-      onComplete();
-      
-      // Save completion state to localStorage
-      localStorage.setItem(progressStorageKey, JSON.stringify({
-        currentTime,
-        progress,
-        markedComplete: true,
-        completedAt: new Date().toISOString(),
-      }));
-
-      // Save to database immediately
-      saveLessonProgress(
+    if (progress >= 90 && !markedComplete && !completionSaveInFlightRef.current) {
+      completionSaveInFlightRef.current = true;
+      setIsSyncing(true);
+      void saveLessonProgress({
         lessonId,
-        courseId,
-        progress,
-        currentTime,
-        duration,
-        true,
-        readinessBonus
-      );
-
-      // Hide banner after 5 seconds
-      setTimeout(() => setShowCompletionBanner(false), 5000);
+        lastPositionSeconds: Math.floor(currentTime),
+        accumulatedWatchSeconds: Math.floor(currentTime),
+        articleCompletionRequested: false,
+      })
+        .then(() => {
+          setMarkedComplete(true);
+          setProgressSaveError(null);
+          setLastSyncTime(new Date());
+          setShowCompletionBanner(true);
+          onComplete();
+          setTimeout(() => setShowCompletionBanner(false), 5000);
+        })
+        .catch((error: unknown) => {
+          setProgressSaveError(error instanceof Error ? error.message : 'Could not complete this lesson.');
+        })
+        .finally(() => {
+          completionSaveInFlightRef.current = false;
+          setIsSyncing(false);
+        });
     }
-  }, [progress, markedComplete, user, updateUser, readinessBonus, onComplete, currentTime, progressStorageKey, lessonId, courseId, duration, saveLessonProgress]);
+  }, [progress, markedComplete, onComplete, currentTime, lessonId, saveLessonProgress]);
 
   // Handle controls visibility
   const showControlsTemporarily = useCallback(() => {
@@ -307,16 +279,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       
       // Resume from saved position
       const dbProgress = getLessonProgress(lessonId);
-      if (dbProgress && dbProgress.lastPosition && dbProgress.lastPosition < videoRef.current.duration * 0.95) {
-        videoRef.current.currentTime = dbProgress.lastPosition;
-      } else {
-        const savedProgress = localStorage.getItem(progressStorageKey);
-        if (savedProgress) {
-          const parsed = JSON.parse(savedProgress);
-          if (parsed.currentTime && parsed.currentTime < videoRef.current.duration * 0.95) {
-            videoRef.current.currentTime = parsed.currentTime;
-          }
-        }
+      if (dbProgress && dbProgress.last_position_seconds && dbProgress.last_position_seconds < videoRef.current.duration * 0.95) {
+        videoRef.current.currentTime = dbProgress.last_position_seconds;
       }
     }
   };
@@ -444,16 +408,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               
               // Resume from saved position
               const dbProgress = getLessonProgress(lessonId);
-              if (dbProgress && dbProgress.lastPosition && dbProgress.lastPosition < event.target.getDuration() * 0.95) {
-                event.target.seekTo(dbProgress.lastPosition, true);
-              } else {
-                const savedProgress = localStorage.getItem(progressStorageKey);
-                if (savedProgress) {
-                  const parsed = JSON.parse(savedProgress);
-                  if (parsed.currentTime && parsed.currentTime < event.target.getDuration() * 0.95) {
-                    event.target.seekTo(parsed.currentTime, true);
-                  }
-                }
+              if (dbProgress && dbProgress.last_position_seconds && dbProgress.last_position_seconds < event.target.getDuration() * 0.95) {
+                event.target.seekTo(dbProgress.last_position_seconds, true);
               }
             },
             onStateChange: (event) => {
@@ -471,7 +427,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         youtubeWindow.onYouTubeIframeAPIReady();
       }
     }
-  }, [youtubeId, lessonId, progressStorageKey, getLessonProgress]);
+  }, [youtubeId, lessonId, getLessonProgress]);
 
   // YouTube progress tracking
   useEffect(() => {
@@ -561,6 +517,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             )}
           </div>
         </div>
+        {progressSaveError && (
+          <p className="absolute top-12 right-4 max-w-xs rounded bg-red-950/90 px-3 py-2 text-xs text-white" role="alert">
+            Progress could not be saved: {progressSaveError}
+          </p>
+        )}
 
         {/* Center play/pause button */}
         <div
@@ -682,7 +643,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       {showCompletionBanner && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-emerald-500 text-white px-6 py-3 rounded-full shadow-lg flex items-center space-x-2 animate-bounce">
           <CheckCircleIcon size={20} />
-          <span className="font-medium">Lesson Complete! +{readinessBonus} Readiness Points</span>
+          <span className="font-medium">Lesson complete</span>
         </div>
       )}
 
