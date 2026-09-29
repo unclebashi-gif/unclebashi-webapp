@@ -81,7 +81,7 @@ const AppLayout: React.FC = () => {
       case 'profile':
         return <ProfilePage />;
       case 'admin':
-        return user?.roles.includes('admin') ? <AdminDashboard /> : <HomePage />;
+        return user?.roles.some((role) => role === 'admin' || role === 'moderator') ? <AdminDashboard /> : <HomePage />;
       case 'settings':
         return <ProfilePage />;
       default:

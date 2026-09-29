@@ -30,19 +30,6 @@ export interface JournalEntry {
   createdAt: string;
 }
 
-export interface CommunityPost {
-  id: string;
-  userId: string;
-  userName: string;
-  userImage?: string;
-  tier: 'open' | 'guided' | 'preparation';
-  title?: string;
-  content: string;
-  isAnonymous: boolean;
-  createdAt: string;
-  commentCount: number;
-}
-
 export interface MatchProfile {
   id: string;
   userId: string;
@@ -80,11 +67,6 @@ interface AppState {
   journalEntries: JournalEntry[];
   addJournalEntry: (entry: JournalEntry) => void;
 
-  // Community
-  communityPosts: CommunityPost[];
-  setCommunityPosts: (posts: CommunityPost[]) => void;
-  addCommunityPost: (post: CommunityPost) => void;
-
   // Matchmaking
   matchProfiles: MatchProfile[];
   setMatchProfiles: (profiles: MatchProfile[]) => void;
@@ -115,7 +97,6 @@ export const useAppStore = create<AppState>()(
           onboardingData: {},
           educationResumeTarget: null,
           journalEntries: [],
-          communityPosts: [],
           matchProfiles: [],
           currentView: 'home',
         });
@@ -141,14 +122,6 @@ export const useAppStore = create<AppState>()(
       addJournalEntry: (entry) =>
         set((state) => ({
           journalEntries: [entry, ...state.journalEntries],
-        })),
-
-      // Community
-      communityPosts: [],
-      setCommunityPosts: (posts) => set({ communityPosts: posts }),
-      addCommunityPost: (post) =>
-        set((state) => ({
-          communityPosts: [post, ...state.communityPosts],
         })),
 
       // Matchmaking

@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Button } from '../ui/button';
 import { IMAGES } from '@/lib/constants';
+import { useAppStore } from '@/lib/store';
+import { getCommunityReports, moderateCommunityContent, reviewCommunityReport, suspendCommunityUser } from '@/lib/communityService';
+import type { CommunityReport } from '@/types/community';
 import {
   UsersIcon,
   BookIcon,
@@ -14,12 +17,84 @@ import {
 } from '../ui/Icons';
 
 export const AdminDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'moderation' | 'matching'>('overview');
+  const { user } = useAppStore();
+  const isAdmin = user?.roles.includes('admin') ?? false;
+  const isModerator = user?.roles.includes('moderator') ?? false;
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'moderation' | 'matching'>(() =>
+    isModerator && !isAdmin ? 'moderation' : 'overview'
+  );
+  const [reports, setReports] = useState<CommunityReport[]>([]);
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportsError, setReportsError] = useState('');
+  const [reportActionId, setReportActionId] = useState<string | null>(null);
+
+  const loadReports = useCallback(async () => {
+    setReportsLoading(true);
+    setReportsError('');
+    try {
+      setReports(await getCommunityReports());
+    } catch (error) {
+      setReportsError(error instanceof Error ? error.message : 'Could not load moderation reports.');
+    } finally {
+      setReportsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'moderation' && (isAdmin || isModerator)) void loadReports();
+  }, [activeTab, isAdmin, isModerator, loadReports]);
+
+  const handleReview = async (report: CommunityReport, status: 'dismissed' | 'actioned', action?: 'hide' | 'remove') => {
+    setReportActionId(report.report_id);
+    setReportsError('');
+    try {
+      if (action) {
+        const reason = window.prompt(`Reason to ${action} this ${report.target_type}:`);
+        if (!reason?.trim()) return;
+        await moderateCommunityContent({
+          ...(report.target_type === 'post' ? { postId: report.target_id } : { commentId: report.target_id }),
+          action,
+          reason: reason.trim(),
+        });
+      }
+      await reviewCommunityReport({
+        reportId: report.report_id,
+        status,
+        resolutionNotes: action ? `Content ${action}d after report review.` : 'Report dismissed.',
+      });
+      await loadReports();
+    } catch (error) {
+      setReportsError(error instanceof Error ? error.message : 'Could not complete the moderation action.');
+    } finally {
+      setReportActionId(null);
+    }
+  };
+
+  const handleSuspend = async (report: CommunityReport) => {
+    if (!isAdmin || !report.target_author_id) return;
+    const reason = window.prompt('Reason for suspending this user:');
+    if (!reason?.trim()) return;
+    setReportActionId(report.report_id);
+    setReportsError('');
+    try {
+      await suspendCommunityUser(report.target_author_id, reason.trim());
+      await reviewCommunityReport({
+        reportId: report.report_id,
+        status: 'actioned',
+        resolutionNotes: 'The reported author was suspended by an administrator.',
+      });
+      await loadReports();
+    } catch (error) {
+      setReportsError(error instanceof Error ? error.message : 'Could not suspend this user.');
+    } finally {
+      setReportActionId(null);
+    }
+  };
 
   const stats = [
     { label: 'Total Users', value: '10,234', change: '+12%', icon: UsersIcon },
     { label: 'Active Courses', value: '5', change: '0%', icon: BookIcon },
-    { label: 'Pending Flags', value: '23', change: '-5%', icon: FlagIcon },
+    { label: 'Pending Reports', value: '—', change: 'Live queue', icon: FlagIcon },
     { label: 'Pending Matches', value: '47', change: '+8%', icon: HeartIcon },
   ];
 
@@ -28,12 +103,6 @@ export const AdminDashboard: React.FC = () => {
     { id: '2', name: 'David Kim', email: 'david@example.com', status: 'pending', progress: 45, image: IMAGES.profiles.men[0] },
     { id: '3', name: 'Amara Johnson', email: 'amara@example.com', status: 'verified', progress: 100, image: IMAGES.profiles.women[1] },
     { id: '4', name: 'Michael Roberts', email: 'michael@example.com', status: 'verified', progress: 60, image: IMAGES.profiles.men[1] },
-  ];
-
-  const moderationQueue = [
-    { id: '1', type: 'post', content: 'Flagged for inappropriate language', reporter: 'Anonymous', status: 'pending', createdAt: '2 hours ago' },
-    { id: '2', type: 'user', content: 'Profile verification request', reporter: 'System', status: 'pending', createdAt: '3 hours ago' },
-    { id: '3', type: 'comment', content: 'Reported for sharing contact info', reporter: 'Sarah M.', status: 'pending', createdAt: '5 hours ago' },
   ];
 
   const pendingMatches = [
@@ -47,12 +116,12 @@ export const AdminDashboard: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-[#1e3a5f] mb-2">Admin Dashboard</h1>
-          <p className="text-gray-600">Manage users, content, and matchmaking</p>
+          <h1 className="text-3xl font-bold text-[#1e3a5f] mb-2">{isAdmin ? 'Admin Dashboard' : 'Community Moderation'}</h1>
+          <p className="text-gray-600">{isAdmin ? 'Manage users, content, and matchmaking' : 'Review Community reports and moderate content.'}</p>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        {isAdmin && <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {stats.map((stat, index) => {
             const Icon = stat.icon;
             return (
@@ -71,7 +140,7 @@ export const AdminDashboard: React.FC = () => {
               </div>
             );
           })}
-        </div>
+        </div>}
 
         {/* Tabs */}
         <div className="flex space-x-1 bg-white rounded-xl p-1 mb-8 shadow-sm">
@@ -80,7 +149,7 @@ export const AdminDashboard: React.FC = () => {
             { id: 'users', label: 'Users' },
             { id: 'moderation', label: 'Moderation' },
             { id: 'matching', label: 'Matching' },
-          ].map((tab) => (
+          ].filter((tab) => tab.id === 'moderation' || isAdmin).map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as typeof activeTab)}
@@ -203,34 +272,32 @@ export const AdminDashboard: React.FC = () => {
         {/* Moderation Tab */}
         {activeTab === 'moderation' && (
           <div className="bg-white rounded-xl shadow-sm p-6">
-            <h2 className="text-lg font-bold text-[#1e3a5f] mb-4">Moderation Queue</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-[#1e3a5f]">Moderation Queue</h2>
+              <Button variant="outline" size="sm" onClick={() => void loadReports()} disabled={reportsLoading}>Refresh</Button>
+            </div>
+            {reportsError && <p className="text-sm text-red-700 mb-4" role="alert">{reportsError}</p>}
+            {reportsLoading ? <p className="text-gray-500" role="status">Loading reports…</p> : null}
+            {!reportsLoading && !reportsError && reports.length === 0 ? <p className="text-gray-500">No pending reports.</p> : null}
             <div className="space-y-4">
-              {moderationQueue.map((item) => (
-                <div key={item.id} className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-start justify-between">
+              {reports.map((report) => (
+                <div key={report.report_id} className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
-                      <div className="flex items-center space-x-2 mb-2">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          item.type === 'post' ? 'bg-blue-100 text-blue-700' :
-                          item.type === 'user' ? 'bg-purple-100 text-purple-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                          {item.type}
-                        </span>
-                        <span className="text-sm text-gray-500">{item.createdAt}</span>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700">{report.target_type}</span>
+                        <span className="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-700">{report.reason.replace(/_/g, ' ')}</span>
+                        <time className="text-sm text-gray-500" dateTime={report.created_at}>{new Date(report.created_at).toLocaleString()}</time>
                       </div>
-                      <p className="text-[#1e3a5f] font-medium">{item.content}</p>
-                      <p className="text-sm text-gray-500 mt-1">Reported by: {item.reporter}</p>
+                      <p className="text-[#1e3a5f] font-medium whitespace-pre-wrap">{report.target_content}</p>
+                      {report.details && <p className="text-sm text-gray-600 mt-2">Report details: {report.details}</p>}
+                      <p className="text-sm text-gray-500 mt-1">Reported by: {report.reporter_display_name}</p>
                     </div>
-                    <div className="flex space-x-2">
-                      <Button variant="outline" size="sm">
-                        <CheckCircleIcon size={16} className="mr-1" />
-                        Approve
-                      </Button>
-                      <Button variant="danger" size="sm">
-                        <AlertCircleIcon size={16} className="mr-1" />
-                        Remove
-                      </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" size="sm" disabled={reportActionId === report.report_id} onClick={() => void handleReview(report, 'dismissed')}>Dismiss</Button>
+                      <Button variant="outline" size="sm" disabled={reportActionId === report.report_id} onClick={() => void handleReview(report, 'actioned', 'hide')}>Hide</Button>
+                      <Button variant="danger" size="sm" disabled={reportActionId === report.report_id} onClick={() => void handleReview(report, 'actioned', 'remove')}>Remove</Button>
+                      {isAdmin && report.target_author_id && <Button variant="ghost" size="sm" disabled={reportActionId === report.report_id} onClick={() => void handleSuspend(report)}>Suspend user</Button>}
                     </div>
                   </div>
                 </div>

@@ -162,7 +162,7 @@ export const Header: React.FC = () => {
                         Settings
                       </button>
 
-                      {user?.roles.includes('admin') && (
+                      {user?.roles.some((role) => role === 'admin' || role === 'moderator') && (
                         <button
                           onClick={() => {
                             handleNavClick('admin');
@@ -171,7 +171,7 @@ export const Header: React.FC = () => {
                           className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                         >
                           <SettingsIcon size={16} className="mr-3" />
-                          Admin Panel
+                          {user.roles.includes('admin') ? 'Admin Panel' : 'Moderation'}
                         </button>
                       )}
 
