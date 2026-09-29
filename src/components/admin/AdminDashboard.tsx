@@ -4,6 +4,7 @@ import { IMAGES } from '@/lib/constants';
 import { useAppStore } from '@/lib/store';
 import { getCommunityReports, moderateCommunityContent, reviewCommunityReport, suspendCommunityUser } from '@/lib/communityService';
 import type { CommunityReport } from '@/types/community';
+import { AdminCoachingPanel } from './AdminCoachingPanel';
 import {
   UsersIcon,
   BookIcon,
@@ -20,7 +21,7 @@ export const AdminDashboard: React.FC = () => {
   const { user } = useAppStore();
   const isAdmin = user?.roles.includes('admin') ?? false;
   const isModerator = user?.roles.includes('moderator') ?? false;
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'moderation' | 'matching'>(() =>
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'moderation' | 'matching' | 'coaching'>(() =>
     isModerator && !isAdmin ? 'moderation' : 'overview'
   );
   const [reports, setReports] = useState<CommunityReport[]>([]);
@@ -149,6 +150,7 @@ export const AdminDashboard: React.FC = () => {
             { id: 'users', label: 'Users' },
             { id: 'moderation', label: 'Moderation' },
             { id: 'matching', label: 'Matching' },
+            { id: 'coaching', label: 'Coaching' },
           ].filter((tab) => tab.id === 'moderation' || isAdmin).map((tab) => (
             <button
               key={tab.id}
@@ -343,6 +345,7 @@ export const AdminDashboard: React.FC = () => {
             </div>
           </div>
         )}
+        {activeTab === 'coaching' && isAdmin && <AdminCoachingPanel />}
       </div>
     </div>
   );
