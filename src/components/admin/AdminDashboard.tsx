@@ -5,6 +5,7 @@ import { useAppStore } from '@/lib/store';
 import { getCommunityReports, moderateCommunityContent, reviewCommunityReport, suspendCommunityUser } from '@/lib/communityService';
 import type { CommunityReport } from '@/types/community';
 import { AdminCoachingPanel } from './AdminCoachingPanel';
+import { AdminMatchmakingPanel } from './AdminMatchmakingPanel';
 import {
   UsersIcon,
   BookIcon,
@@ -96,7 +97,7 @@ export const AdminDashboard: React.FC = () => {
     { label: 'Total Users', value: '10,234', change: '+12%', icon: UsersIcon },
     { label: 'Active Courses', value: '5', change: '0%', icon: BookIcon },
     { label: 'Pending Reports', value: '—', change: 'Live queue', icon: FlagIcon },
-    { label: 'Pending Matches', value: '47', change: '+8%', icon: HeartIcon },
+    { label: 'Matchmaking Reviews', value: 'Live queue', change: 'Admin', icon: HeartIcon },
   ];
 
   const recentUsers = [
@@ -104,12 +105,6 @@ export const AdminDashboard: React.FC = () => {
     { id: '2', name: 'David Kim', email: 'david@example.com', status: 'pending', progress: 45, image: IMAGES.profiles.men[0] },
     { id: '3', name: 'Amara Johnson', email: 'amara@example.com', status: 'verified', progress: 100, image: IMAGES.profiles.women[1] },
     { id: '4', name: 'Michael Roberts', email: 'michael@example.com', status: 'verified', progress: 60, image: IMAGES.profiles.men[1] },
-  ];
-
-  const pendingMatches = [
-    { id: '1', userA: 'Sarah M.', userB: 'David K.', requestedAt: '1 day ago', compatibility: 85 },
-    { id: '2', userA: 'Amara J.', userB: 'Michael R.', requestedAt: '2 days ago', compatibility: 78 },
-    { id: '3', userA: 'Grace A.', userB: 'James T.', requestedAt: '3 days ago', compatibility: 92 },
   ];
 
   return (
@@ -310,40 +305,7 @@ export const AdminDashboard: React.FC = () => {
 
         {/* Matching Tab */}
         {activeTab === 'matching' && (
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <h2 className="text-lg font-bold text-[#1e3a5f] mb-4">Pending Match Reviews</h2>
-            <div className="space-y-4">
-              {pendingMatches.map((match) => (
-                <div key={match.id} className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <div className="text-center">
-                        <p className="font-medium text-[#1e3a5f]">{match.userA}</p>
-                        <p className="text-xs text-gray-500">Requester</p>
-                      </div>
-                      <HeartIcon size={24} className="text-[#c4785a]" />
-                      <div className="text-center">
-                        <p className="font-medium text-[#1e3a5f]">{match.userB}</p>
-                        <p className="text-xs text-gray-500">Recipient</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-gray-500">{match.requestedAt}</p>
-                      <p className="text-sm font-medium text-emerald-600">{match.compatibility}% compatible</p>
-                    </div>
-                  </div>
-                  <div className="flex space-x-2 mt-4">
-                    <Button variant="outline" size="sm" fullWidth>
-                      View Profiles
-                    </Button>
-                    <Button size="sm" fullWidth>
-                      Approve Introduction
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <AdminMatchmakingPanel />
         )}
         {activeTab === 'coaching' && isAdmin && <AdminCoachingPanel />}
       </div>

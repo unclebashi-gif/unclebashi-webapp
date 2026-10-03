@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAppStore } from '@/lib/store';
+import { getViewFromPath } from '@/lib/navigation';
 import { supabase } from '@/lib/supabase';
 import { Button } from '../ui/button';
 import {
@@ -16,10 +18,11 @@ import {
 } from '../ui/Icons';
 
 export const Header: React.FC = () => {
+  const location = useLocation();
+  const currentView = getViewFromPath(location.pathname) ?? 'home';
   const {
     isAuthenticated,
     user,
-    currentView,
     setCurrentView,
     setShowAuthModal,
     setAuthModalMode,

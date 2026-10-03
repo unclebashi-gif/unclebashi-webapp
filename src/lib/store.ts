@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { navigateToView } from './navigation';
 
 
 // Types
@@ -30,19 +31,6 @@ export interface JournalEntry {
   createdAt: string;
 }
 
-export interface MatchProfile {
-  id: string;
-  userId: string;
-  name: string;
-  age: number;
-  location: string;
-  profileImage: string;
-  valuesSummary: string;
-  intentionsStatement: string;
-  readinessScore: number;
-  coursesCompleted: number;
-}
-
 // App State
 interface AppState {
   // Auth & User
@@ -50,11 +38,12 @@ interface AppState {
   user: User | null;
   setAuthenticatedUser: (user: User, onboardingData: Record<string, unknown>) => void;
   updateUser: (updates: Partial<User>) => void;
-  clearUserSession: () => void;
+  clearUserSession: (options?: { navigateHome?: boolean }) => void;
 
   // Navigation
   currentView: string;
-  setCurrentView: (view: string) => void;
+  setCurrentView: (view: string, options?: { replace?: boolean }) => void;
+  syncCurrentView: (view: string) => void;
   educationResumeTarget: { courseId: string; lessonId: string; positionSeconds: number } | null;
   setEducationResumeTarget: (target: AppState['educationResumeTarget']) => void;
 
@@ -66,10 +55,6 @@ interface AppState {
   // Journal
   journalEntries: JournalEntry[];
   addJournalEntry: (entry: JournalEntry) => void;
-
-  // Matchmaking
-  matchProfiles: MatchProfile[];
-  setMatchProfiles: (profiles: MatchProfile[]) => void;
 
   // UI State
   showAuthModal: boolean;
@@ -90,22 +75,26 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           user: state.user ? { ...state.user, ...updates } : null,
         })),
-      clearUserSession: () => {
+      clearUserSession: (options) => {
         set({
           isAuthenticated: false,
           user: null,
           onboardingData: {},
           educationResumeTarget: null,
           journalEntries: [],
-          matchProfiles: [],
           currentView: 'home',
         });
+        if (options?.navigateHome !== false) navigateToView('home', true);
       },
 
 
       // Navigation
       currentView: 'home',
-      setCurrentView: (view) => set({ currentView: view }),
+      setCurrentView: (view, options) => {
+        navigateToView(view, options?.replace);
+        set({ currentView: view });
+      },
+      syncCurrentView: (view) => set({ currentView: view }),
       educationResumeTarget: null,
       setEducationResumeTarget: (target) => set({ educationResumeTarget: target }),
 
@@ -123,10 +112,6 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           journalEntries: [entry, ...state.journalEntries],
         })),
-
-      // Matchmaking
-      matchProfiles: [],
-      setMatchProfiles: (profiles) => set({ matchProfiles: profiles }),
 
       // UI State
       showAuthModal: false,

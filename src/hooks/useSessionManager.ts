@@ -24,48 +24,60 @@ export const useSessionManager = () => {
   const applyAuthoritativeIdentity = useCallback(async (
     authUser: { id: string; email?: string; user_metadata?: Record<string, unknown> },
     version: number
-  ) => {
+  ): Promise<boolean> => {
     try {
       const identity = await loadIdentity(authUser);
-      if (requestVersion.current !== version) return;
+      if (requestVersion.current !== version) return false;
 
       setAuthenticatedUser(identity.user, identity.onboardingData);
       setRestoreError(null);
       if (!identity.user.onboardingCompleted) {
         setCurrentView('onboarding');
-      } else if (useAppStore.getState().currentView === 'home' || useAppStore.getState().currentView === 'onboarding') {
-        setCurrentView('education');
       }
+      return true;
     } catch (error) {
-      if (requestVersion.current !== version) return;
-      clearUserSession();
+      if (requestVersion.current !== version) return false;
+      clearUserSession({ navigateHome: false });
       setRestoreError(getIdentityMessage(error));
+      return false;
     }
   }, [clearUserSession, setAuthenticatedUser, setCurrentView]);
+
+  const restoreIdentityFromAuthEvent = useCallback(async (
+    authUser: { id: string; email?: string; user_metadata?: Record<string, unknown> },
+    version: number
+  ) => {
+    const identityLoaded = await applyAuthoritativeIdentity(authUser, version);
+    if (identityLoaded && requestVersion.current === version) setIsRestoring(false);
+  }, [applyAuthoritativeIdentity]);
 
   useEffect(() => {
     let mounted = true;
 
     const restoreSession = async () => {
       const version = ++requestVersion.current;
+      let restorationResolved = false;
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) throw error;
         if (!mounted || requestVersion.current !== version) return;
 
         if (session?.user) {
-          await applyAuthoritativeIdentity(session.user, version);
+          restorationResolved = await applyAuthoritativeIdentity(session.user, version);
         } else {
           clearUserSession();
           setRestoreError(null);
+          restorationResolved = true;
         }
       } catch (error) {
         if (mounted && requestVersion.current === version) {
-          clearUserSession();
+          // A failed getSession call does not prove the user is signed out.
           setRestoreError(getIdentityMessage(error));
         }
       } finally {
-        if (mounted) setIsRestoring(false);
+        // An auth event may have started a newer identity load while this
+        // request was pending. Only the latest request can resolve startup.
+        if (mounted && requestVersion.current === version && restorationResolved) setIsRestoring(false);
       }
     };
 
@@ -83,14 +95,16 @@ export const useSessionManager = () => {
         requestVersion.current += 1;
         clearUserSession();
         setRestoreError(null);
+        setIsRestoring(false);
         return;
       }
 
       if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
         const version = ++requestVersion.current;
+        setIsRestoring(true);
         // Defer database reads until Supabase has returned from its auth callback.
         window.setTimeout(() => {
-          if (mounted) void applyAuthoritativeIdentity(session.user, version);
+          if (mounted) void restoreIdentityFromAuthEvent(session.user, version);
         }, 0);
       }
     });
@@ -99,7 +113,7 @@ export const useSessionManager = () => {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [applyAuthoritativeIdentity, clearUserSession]);
+  }, [restoreIdentityFromAuthEvent, clearUserSession]);
 
   return { isRestoring, restoreError };
 };

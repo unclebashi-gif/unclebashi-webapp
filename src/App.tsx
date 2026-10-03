@@ -20,6 +20,7 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
+            <Route path="/:view" element={<Index />} />
             <Route path="/reset-password" element={<PasswordResetPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

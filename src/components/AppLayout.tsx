@@ -1,5 +1,7 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppStore } from '@/lib/store';
+import { getViewFromPath } from '@/lib/navigation';
 import { useSessionManager } from '@/hooks/useSessionManager';
 import { Header } from './layout/Header';
 import { Footer } from './layout/Footer';
@@ -15,8 +17,41 @@ const ProfilePage = lazy(() => import('./profile/ProfilePage').then(({ ProfilePa
 const AdminDashboard = lazy(() => import('./admin/AdminDashboard').then(({ AdminDashboard }) => ({ default: AdminDashboard })));
 
 const AppLayout: React.FC = () => {
-  const { currentView, showAuthModal, setShowAuthModal, user, isAuthenticated } = useAppStore();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { showAuthModal, setShowAuthModal, user, isAuthenticated } = useAppStore();
+  const syncCurrentView = useAppStore((state) => state.syncCurrentView);
+  const routeView = getViewFromPath(location.pathname);
+  const currentView = routeView ?? 'home';
   const { isRestoring, restoreError } = useSessionManager();
+
+  useEffect(() => {
+    if (isRestoring) return;
+    syncCurrentView(currentView);
+  }, [currentView, isRestoring, syncCurrentView]);
+
+  useEffect(() => {
+    if (isRestoring) return;
+    if (!routeView) {
+      navigate('/', { replace: true });
+      return;
+    }
+    if (!isAuthenticated && routeView !== 'home') {
+      navigate('/', { replace: true });
+      return;
+    }
+    if (isAuthenticated && user && !user.onboardingCompleted && routeView !== 'onboarding') {
+      navigate('/onboarding', { replace: true });
+      return;
+    }
+    if (isAuthenticated && user?.onboardingCompleted && routeView === 'onboarding') {
+      navigate('/', { replace: true });
+      return;
+    }
+    if (routeView === 'admin' && !user?.roles.some((role) => role === 'admin' || role === 'moderator')) {
+      navigate('/', { replace: true });
+    }
+  }, [isAuthenticated, isRestoring, navigate, routeView, user]);
 
   // Show a loading screen while restoring the session
   if (isRestoring) {
@@ -30,7 +65,14 @@ const AppLayout: React.FC = () => {
           </div>
           <div className="text-center">
             <h2 className="text-lg font-semibold text-[#1e3a5f]">Welcome back</h2>
-            <p className="text-sm text-gray-500 mt-1">Restoring your session...</p>
+            {restoreError ? (
+              <div className="mt-2 max-w-md text-sm text-red-700" role="alert">
+                <p>{restoreError}</p>
+                <button type="button" onClick={() => window.location.reload()} className="mt-2 underline">Try again</button>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 mt-1">Restoring your session...</p>
+            )}
           </div>
           <div className="w-48 h-1.5 bg-gray-200 rounded-full overflow-hidden">
             <div className="h-full bg-[#c4785a] rounded-full animate-[loading_1.5s_ease-in-out_infinite]" 
