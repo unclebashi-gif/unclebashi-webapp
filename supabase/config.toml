@@ -1,0 +1,5 @@
+[functions.mtn-checkout]
+verify_jwt = true
+
+[functions.mtn-payment-callback]
+verify_jwt = false

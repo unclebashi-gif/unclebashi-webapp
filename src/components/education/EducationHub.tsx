@@ -4,6 +4,7 @@ import { useCourseProgress } from '@/hooks/useCourseProgress';
 import { getAccessibleLessons, getPublishedCourseModules, getPublishedCourses } from '@/lib/educationService';
 import type { Course, CourseModule, Lesson } from '@/types/education';
 import { VideoPlayer } from '../video/VideoPlayer';
+import { MtnCheckoutDialog } from '../payment/MtnCheckoutDialog';
 import { Button } from '../ui/button';
 import { ProgressBar } from '../ui/ProgressBar';
 import { BookIcon, CheckCircleIcon, ClockIcon, PlayIcon } from '../ui/Icons';
@@ -42,6 +43,11 @@ export const EducationHub: React.FC = () => {
   const [reflectionSaveError, setReflectionSaveError] = useState<string | null>(null);
   const [reflectionSaveSucceeded, setReflectionSaveSucceeded] = useState(false);
   const [isSavingReflection, setIsSavingReflection] = useState(false);
+  const [paymentCourse, setPaymentCourse] = useState<Course | null>(null);
+
+  const refreshAfterPayment = useCallback(async () => {
+    await refreshProgress();
+  }, [refreshProgress]);
 
   const activeEnrollment = useMemo(() => {
     if (!selectedCourse) return null;
@@ -244,6 +250,8 @@ export const EducationHub: React.FC = () => {
     return (
       <div className="min-h-screen bg-[#faf6f1] py-8">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <MtnCheckoutDialog course={paymentCourse} isOpen={Boolean(paymentCourse)}
+            onClose={() => setPaymentCourse(null)} onAccessGranted={refreshAfterPayment} />
           <Button variant="ghost" onClick={() => setSelectedCourse(null)} className="mb-6">
             ← Back to Courses
           </Button>
@@ -261,7 +269,9 @@ export const EducationHub: React.FC = () => {
               </div>
               <span className={`px-3 py-1 rounded-full text-sm font-semibold ${selectedCourse.is_free
                 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
-                {selectedCourse.is_free ? 'FREE' : 'ACCESS UNAVAILABLE'}
+                {selectedCourse.is_free ? 'FREE' : selectedCourse.price_amount !== null && selectedCourse.currency
+                  ? `${selectedCourse.currency} ${new Intl.NumberFormat('en-UG', { maximumFractionDigits: 0 }).format(selectedCourse.price_amount)}`
+                  : 'PRICE UNAVAILABLE'}
               </span>
             </div>
 
@@ -290,9 +300,15 @@ export const EducationHub: React.FC = () => {
               </div>
             )}
             {!selectedCourse.is_free && !hasActiveEnrollment && (
-              <p className="mt-5 text-sm text-amber-800" role="status">
-                Paid course enrollment is not available yet.
-              </p>
+              <div className="mt-6">
+                <Button onClick={() => setPaymentCourse(selectedCourse)}
+                  disabled={selectedCourse.price_amount === null || !selectedCourse.currency}>
+                  Purchase course
+                </Button>
+                {(!selectedCourse.price_amount || !selectedCourse.currency) && (
+                  <p className="mt-3 text-sm text-amber-800" role="status">Checkout is unavailable because course pricing is not configured.</p>
+                )}
+              </div>
             )}
           </section>
 
@@ -355,6 +371,8 @@ export const EducationHub: React.FC = () => {
   return (
     <main className="min-h-screen bg-[#faf6f1] py-8">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <MtnCheckoutDialog course={paymentCourse} isOpen={Boolean(paymentCourse)}
+          onClose={() => setPaymentCourse(null)} onAccessGranted={refreshAfterPayment} />
         <header className="mb-8">
           <h1 className="text-3xl font-bold text-[#1e3a5f] mb-2">Marriage Preparation</h1>
           <p className="text-gray-600">Build a strong foundation for your future marriage with our courses.</p>
@@ -396,7 +414,12 @@ export const EducationHub: React.FC = () => {
                       <Button variant="outline" onClick={() => setSelectedCourse(course)}>View course</Button>
                     )}
                     {!course.is_free && !enrollment && (
-                      <Button variant="outline" disabled>Paid access coming later</Button>
+                      <Button variant="outline" onClick={() => setPaymentCourse(course)}
+                        disabled={course.price_amount === null || !course.currency}>
+                        {course.price_amount !== null && course.currency
+                          ? `Purchase · ${course.currency} ${new Intl.NumberFormat('en-UG', { maximumFractionDigits: 0 }).format(course.price_amount)}`
+                          : 'Price unavailable'}
+                      </Button>
                     )}
                   </div>
                 </article>

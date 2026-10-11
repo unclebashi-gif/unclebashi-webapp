@@ -6,6 +6,7 @@ import { getCommunityReports, moderateCommunityContent, reviewCommunityReport, s
 import type { CommunityReport } from '@/types/community';
 import { AdminCoachingPanel } from './AdminCoachingPanel';
 import { AdminMatchmakingPanel } from './AdminMatchmakingPanel';
+import { AdminPaymentsPanel } from './AdminPaymentsPanel';
 import {
   UsersIcon,
   BookIcon,
@@ -22,7 +23,7 @@ export const AdminDashboard: React.FC = () => {
   const { user } = useAppStore();
   const isAdmin = user?.roles.includes('admin') ?? false;
   const isModerator = user?.roles.includes('moderator') ?? false;
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'moderation' | 'matching' | 'coaching'>(() =>
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'moderation' | 'matching' | 'coaching' | 'payments'>(() =>
     isModerator && !isAdmin ? 'moderation' : 'overview'
   );
   const [reports, setReports] = useState<CommunityReport[]>([]);
@@ -139,18 +140,19 @@ export const AdminDashboard: React.FC = () => {
         </div>}
 
         {/* Tabs */}
-        <div className="flex space-x-1 bg-white rounded-xl p-1 mb-8 shadow-sm">
+        <div className="flex flex-wrap gap-1 bg-white rounded-xl p-1 mb-8 shadow-sm">
           {[
             { id: 'overview', label: 'Overview' },
             { id: 'users', label: 'Users' },
             { id: 'moderation', label: 'Moderation' },
             { id: 'matching', label: 'Matching' },
             { id: 'coaching', label: 'Coaching' },
+            { id: 'payments', label: 'Payments' },
           ].filter((tab) => tab.id === 'moderation' || isAdmin).map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as typeof activeTab)}
-              className={`flex-1 py-3 rounded-lg font-medium transition-colors ${
+              className={`min-w-[96px] flex-1 py-3 rounded-lg font-medium transition-colors ${
                 activeTab === tab.id
                   ? 'bg-[#1e3a5f] text-white'
                   : 'text-gray-600 hover:bg-gray-50'
@@ -308,6 +310,7 @@ export const AdminDashboard: React.FC = () => {
           <AdminMatchmakingPanel />
         )}
         {activeTab === 'coaching' && isAdmin && <AdminCoachingPanel />}
+        {activeTab === 'payments' && isAdmin && <AdminPaymentsPanel />}
       </div>
     </div>
   );

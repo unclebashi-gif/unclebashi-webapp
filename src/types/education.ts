@@ -13,6 +13,8 @@ export interface Course {
   category: string | null;
   thumbnail_url: string | null;
   is_free: boolean;
+  price_amount: number | null;
+  currency: string | null;
   status: CourseStatus;
   display_order: number;
   created_at: string;
