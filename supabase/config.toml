@@ -3,3 +3,9 @@ verify_jwt = true
 
 [functions.mtn-payment-callback]
 verify_jwt = false
+
+[functions.pesapal-checkout]
+verify_jwt = true
+
+[functions.pesapal-ipn]
+verify_jwt = false

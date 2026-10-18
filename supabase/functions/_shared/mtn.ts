@@ -11,6 +11,7 @@ export interface PaymentContext {
   status: string;
   payer_msisdn_masked: string | null;
   access_granted_at: string | null;
+  provider: string;
 }
 
 export interface SafePaymentResult {
@@ -22,11 +23,99 @@ export interface SafePaymentResult {
   access_granted: boolean;
 }
 
-export const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+export type MtnTokenErrorCode =
+  | 'MTN_TOKEN_AUTH_REJECTED'
+  | 'MTN_TOKEN_HTTP_ERROR'
+  | 'MTN_TOKEN_NETWORK_ERROR'
+  | 'MTN_TOKEN_INVALID_RESPONSE';
+
+export class MtnTokenError extends Error {
+  constructor(
+    public readonly code: MtnTokenErrorCode,
+    public readonly providerHttpStatus?: number,
+    public readonly providerErrorCode?: string,
+  ) {
+    super(code);
+    this.name = 'MtnTokenError';
+  }
+}
+
+const knownMtnTokenErrorCodes = new Set([
+  'NOT_ALLOWED',
+  'NOT_ALLOWED_TARGET_ENVIRONMENT',
+  'ACCESS_DENIED',
+  'INTERNAL_PROCESSING_ERROR',
+  'SERVICE_UNAVAILABLE',
+]);
+
+async function readSafeMtnTokenErrorCode(response: Response): Promise<string | undefined> {
+  const reader = response.body?.getReader();
+  if (!reader) return undefined;
+
+  const maxBytes = 4096;
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (totalBytes < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done || !value) break;
+      const remaining = maxBytes - totalBytes;
+      const chunk = value.subarray(0, remaining);
+      chunks.push(chunk);
+      totalBytes += chunk.byteLength;
+      if (chunk.byteLength < value.byteLength || totalBytes === maxBytes) {
+        await reader.cancel();
+        break;
+      }
+    }
+  } catch {
+    return undefined;
+  } finally {
+    reader.releaseLock();
+  }
+
+  try {
+    const bytes = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const payload = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+    const candidateFields = [payload.code, payload.errorCode, payload.error_code];
+    return candidateFields.find((candidate): candidate is string =>
+      typeof candidate === 'string' && knownMtnTokenErrorCodes.has(candidate)
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+const allowedBrowserOrigins = new Set([
+  'https://unclebashi.com',
+  'https://www.unclebashi.com',
+  'http://localhost:8080',
+  'http://127.0.0.1:8080',
+  'http://localhost:4173',
+  'http://127.0.0.1:4173',
+]);
+
+export function isAllowedBrowserOrigin(origin: string): boolean {
+  return allowedBrowserOrigins.has(origin);
+}
+
+export function getCorsHeaders(request: Request): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Vary': 'Origin',
+  };
+  const origin = request.headers.get('Origin');
+  if (origin && isAllowedBrowserOrigin(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+  }
+  return headers;
+}
 
 function requiredEnv(name: string): string {
   const value = Deno.env.get(name)?.trim();
@@ -107,19 +196,37 @@ export function normalizeUgandanMsisdn(input: string): { canonical: string; mask
 export async function getMtnAccessToken(): Promise<string> {
   const config = getMtnConfig();
   const basic = btoa(`${config.apiUser}:${config.apiKey}`);
-  const response = await fetch(`${config.baseUrl}/collection/token/`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${basic}`,
-      'Ocp-Apim-Subscription-Key': config.subscriptionKey,
-      'Content-Type': 'application/json',
-    },
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!response.ok) throw new Error('MTN authentication failed. Check server-side sandbox configuration.');
-  const payload = await response.json() as { access_token?: unknown };
-  if (typeof payload.access_token !== 'string' || !payload.access_token) {
-    throw new Error('MTN did not return an access token.');
+  let response: Response;
+  try {
+    response = await fetch(`${config.baseUrl}/collection/token/`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${basic}`,
+        'Ocp-Apim-Subscription-Key': config.subscriptionKey,
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch {
+    throw new MtnTokenError('MTN_TOKEN_NETWORK_ERROR');
+  }
+
+  if (!response.ok) {
+    const providerErrorCode = await readSafeMtnTokenErrorCode(response);
+    if (response.status === 401 || response.status === 403) {
+      throw new MtnTokenError('MTN_TOKEN_AUTH_REJECTED', response.status, providerErrorCode);
+    }
+    throw new MtnTokenError('MTN_TOKEN_HTTP_ERROR', response.status, providerErrorCode);
+  }
+
+  let payload: { access_token?: unknown };
+  try {
+    payload = await response.json() as { access_token?: unknown };
+  } catch {
+    throw new MtnTokenError('MTN_TOKEN_INVALID_RESPONSE');
+  }
+  if (typeof payload.access_token !== 'string' || !payload.access_token.trim()) {
+    throw new MtnTokenError('MTN_TOKEN_INVALID_RESPONSE');
   }
   return payload.access_token;
 }
@@ -226,6 +333,7 @@ export async function verifyAndFinalize(
   client: ReturnType<typeof createServiceClient>,
   context: PaymentContext,
 ): Promise<SafePaymentResult> {
+  if (context.provider !== 'mtn') throw new Error('Payment provider does not match the MTN verification flow.');
   if (context.status === 'successful') return safeResult(context);
   if (['failed', 'cancelled', 'expired'].includes(context.status)) return safeResult(context);
   const token = await getMtnAccessToken();
@@ -311,7 +419,7 @@ export async function isAdmin(
   return Boolean(data);
 }
 
-export function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = corsHeaders): Response {
+export function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...headers, 'Content-Type': 'application/json' },

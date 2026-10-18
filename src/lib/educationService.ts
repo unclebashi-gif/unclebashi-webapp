@@ -14,6 +14,9 @@ import type {
   UserReflection,
 } from '@/types/education';
 
+export const COURSE_AUDIENCE_RESTRICTION_MESSAGE =
+  'This course is available to a specific audience. Please review your profile details.';
+
 async function requireAuthenticatedUserId(): Promise<string> {
   const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
@@ -25,6 +28,15 @@ async function requireAuthenticatedUserId(): Promise<string> {
 
 function throwQueryError(error: unknown): never {
   throw error;
+}
+
+export async function isCourseAudienceEligible(courseId: string): Promise<boolean> {
+  await requireAuthenticatedUserId();
+  const { data, error } = await supabase.rpc('is_course_audience_eligible', {
+    p_course_id: courseId,
+  });
+  if (error) throwQueryError(error);
+  return data === true;
 }
 
 export async function getPublishedCourses(): Promise<Course[]> {

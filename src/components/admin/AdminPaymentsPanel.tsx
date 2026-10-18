@@ -31,7 +31,8 @@ export const AdminPaymentsPanel: React.FC = () => {
     setCheckingId(paymentId);
     setError(null);
     try {
-      await checkAdminPaymentStatus(paymentId);
+      const payment = payments.find((row) => row.payment_id === paymentId);
+      await checkAdminPaymentStatus(paymentId, payment?.provider ?? 'mtn');
       await loadPayments();
     } catch (checkError) {
       setError(checkError instanceof Error ? checkError.message : 'Could not verify payment status.');
@@ -45,7 +46,7 @@ export const AdminPaymentsPanel: React.FC = () => {
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-[#1e3a5f]">Course payments</h2>
-          <p className="mt-1 text-sm text-gray-500">MTN MoMo payment records and verified access grants.</p>
+          <p className="mt-1 text-sm text-gray-500">MTN and Pesapal payment records, provider environments, and verified access grants.</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void loadPayments()} disabled={loading}>Refresh</Button>
       </div>
@@ -61,12 +62,13 @@ export const AdminPaymentsPanel: React.FC = () => {
                 <div><p className="text-xs uppercase tracking-wide text-gray-500">Customer</p><p className="text-sm text-gray-800">{payment.customer_name}</p>{payment.customer_email && <p className="text-xs text-gray-500">{payment.customer_email}</p>}</div>
                 <div><p className="text-xs uppercase tracking-wide text-gray-500">Course</p><p className="text-sm text-gray-800">{payment.course_title}</p></div>
                 <div><p className="text-xs uppercase tracking-wide text-gray-500">Amount</p><p className="text-sm font-semibold text-gray-800">{formatAmount(payment.amount, payment.currency)}</p></div>
-                <div><p className="text-xs uppercase tracking-wide text-gray-500">Provider / phone</p><p className="text-sm text-gray-800">MTN MoMo · {payment.payer_msisdn_masked ?? '—'}</p></div>
-                <div><p className="text-xs uppercase tracking-wide text-gray-500">Status</p><p className="text-sm capitalize text-gray-800">{payment.status}</p><p className="text-xs text-gray-500">Access {payment.access_granted_at ? 'granted' : 'not granted'}</p></div>
+                <div><p className="text-xs uppercase tracking-wide text-gray-500">Provider</p><p className="text-sm text-gray-800">{payment.provider === 'mtn' ? `MTN${payment.payer_msisdn_masked ? ` · ${payment.payer_msisdn_masked}` : ''}` : 'Pesapal'}</p></div>
+                <div><p className="text-xs uppercase tracking-wide text-gray-500">Status / environment</p><p className={`text-sm capitalize ${payment.status === 'reversed' ? 'font-semibold text-amber-800' : 'text-gray-800'}`}>{payment.status === 'reversed' ? 'Reversed · Admin reconciliation' : payment.status}</p><span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${payment.provider_environment === 'sandbox' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>{payment.provider_environment === 'sandbox' ? 'Sandbox' : 'Production'}</span><p className="text-xs text-gray-500">Access {payment.access_granted_at ? 'granted · review if reversed' : 'not granted'}</p></div>
                 <div className="sm:col-span-2 xl:col-span-3"><p className="text-xs uppercase tracking-wide text-gray-500">Provider reference</p><p className="break-all font-mono text-xs text-gray-700">{payment.provider_reference}</p></div>
                 {payment.failure_reason && <div className="sm:col-span-2 xl:col-span-3"><p className="text-xs uppercase tracking-wide text-gray-500">Failure reason</p><p className="text-sm text-red-700">{payment.failure_reason}</p></div>}
               </div>
-              {(payment.status === 'created' || payment.status === 'pending') && (
+              {(payment.status === 'created' || payment.status === 'pending'
+                || (payment.provider === 'pesapal' && payment.status === 'successful')) && (
                 <Button variant="outline" size="sm" disabled={checkingId === payment.payment_id}
                   onClick={() => void checkStatus(payment.payment_id)}>
                   {checkingId === payment.payment_id ? 'Checking…' : 'Check status'}

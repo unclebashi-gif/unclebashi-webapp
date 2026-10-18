@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import { PasswordResetPage } from "./components/auth/PasswordResetPage";
+import PaymentReturn from "./pages/PaymentReturn";
 
 const queryClient = new QueryClient();
 
@@ -22,6 +23,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/:view" element={<Index />} />
             <Route path="/reset-password" element={<PasswordResetPage />} />
+            <Route path="/payment/return" element={<PaymentReturn />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

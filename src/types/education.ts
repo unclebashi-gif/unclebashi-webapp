@@ -1,4 +1,5 @@
 export type CourseStatus = 'draft' | 'published' | 'archived';
+export type CourseAudienceGender = 'all' | 'female' | 'male';
 export type LessonStatus = 'draft' | 'published' | 'archived';
 export type LessonContentType = 'video' | 'article' | 'reflection';
 export type EnrollmentStatus = 'active' | 'revoked';
@@ -13,6 +14,7 @@ export interface Course {
   category: string | null;
   thumbnail_url: string | null;
   is_free: boolean;
+  audience_gender: CourseAudienceGender;
   price_amount: number | null;
   currency: string | null;
   status: CourseStatus;

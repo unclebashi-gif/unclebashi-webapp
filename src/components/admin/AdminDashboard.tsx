@@ -1,35 +1,106 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../ui/button';
-import { IMAGES } from '@/lib/constants';
 import { useAppStore } from '@/lib/store';
 import { getCommunityReports, moderateCommunityContent, reviewCommunityReport, suspendCommunityUser } from '@/lib/communityService';
 import type { CommunityReport } from '@/types/community';
+import { getAdminOverview, getAdminUsers } from '@/lib/adminService';
+import type { AdminOverview, AdminUser } from '@/types/admin';
 import { AdminCoachingPanel } from './AdminCoachingPanel';
 import { AdminMatchmakingPanel } from './AdminMatchmakingPanel';
 import { AdminPaymentsPanel } from './AdminPaymentsPanel';
+import { AdminCoursePricingPanel } from './AdminCoursePricingPanel';
 import {
   UsersIcon,
   BookIcon,
   FlagIcon,
   HeartIcon,
-  TrendingUpIcon,
-  CheckCircleIcon,
-  AlertCircleIcon,
-  EyeIcon,
-  ShieldIcon,
 } from '../ui/Icons';
 
 export const AdminDashboard: React.FC = () => {
   const { user } = useAppStore();
   const isAdmin = user?.roles.includes('admin') ?? false;
   const isModerator = user?.roles.includes('moderator') ?? false;
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'moderation' | 'matching' | 'coaching' | 'payments'>(() =>
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'moderation' | 'matching' | 'coaching' | 'payments' | 'courses'>(() =>
     isModerator && !isAdmin ? 'moderation' : 'overview'
   );
   const [reports, setReports] = useState<CommunityReport[]>([]);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reportsError, setReportsError] = useState('');
   const [reportActionId, setReportActionId] = useState<string | null>(null);
+  const [overview, setOverview] = useState<AdminOverview | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [overviewError, setOverviewError] = useState('');
+  const [recentUsers, setRecentUsers] = useState<AdminUser[]>([]);
+  const [recentUsersLoading, setRecentUsersLoading] = useState(false);
+  const [recentUsersError, setRecentUsersError] = useState('');
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState('');
+  const [userSearch, setUserSearch] = useState('');
+  const [usersHasMore, setUsersHasMore] = useState(false);
+  const [usersCursor, setUsersCursor] = useState<{ before: string; userId: string } | null>(null);
+  const usersRequestId = useRef(0);
+
+  const loadOverview = useCallback(async () => {
+    setOverviewLoading(true);
+    setOverviewError('');
+    try {
+      setOverview(await getAdminOverview());
+    } catch (error) {
+      setOverviewError(error instanceof Error ? error.message : 'Could not load admin overview.');
+    } finally {
+      setOverviewLoading(false);
+    }
+  }, []);
+
+  const loadRecentUsers = useCallback(async () => {
+    setRecentUsersLoading(true);
+    setRecentUsersError('');
+    try {
+      const page = await getAdminUsers({ limit: 5 });
+      setRecentUsers(page.users);
+    } catch (error) {
+      setRecentUsersError(error instanceof Error ? error.message : 'Could not load recent users.');
+    } finally {
+      setRecentUsersLoading(false);
+    }
+  }, []);
+
+  const loadUsers = useCallback(async (append = false, before?: { before: string; userId: string }) => {
+    const requestId = ++usersRequestId.current;
+    setUsersLoading(true);
+    setUsersError('');
+    try {
+      const page = await getAdminUsers({
+        search: userSearch,
+        before: before?.before,
+        beforeUserId: before?.userId,
+      });
+      if (requestId !== usersRequestId.current) return;
+      setAdminUsers((current) => append ? [...current, ...page.users] : page.users);
+      setUsersHasMore(page.hasMore);
+      setUsersCursor(page.nextBefore && page.nextBeforeUserId
+        ? { before: page.nextBefore, userId: page.nextBeforeUserId }
+        : null);
+    } catch (error) {
+      if (requestId !== usersRequestId.current) return;
+      setUsersError(error instanceof Error ? error.message : 'Could not load users.');
+    } finally {
+      if (requestId === usersRequestId.current) setUsersLoading(false);
+    }
+  }, [userSearch]);
+
+  useEffect(() => {
+    if (activeTab !== 'overview' || !isAdmin) return;
+    void loadOverview();
+    void loadRecentUsers();
+  }, [activeTab, isAdmin, loadOverview, loadRecentUsers]);
+
+  useEffect(() => {
+    if (activeTab !== 'users' || !isAdmin) return;
+    const timer = window.setTimeout(() => void loadUsers(), 250);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, isAdmin, loadUsers]);
 
   const loadReports = useCallback(async () => {
     setReportsLoading(true);
@@ -95,17 +166,10 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const stats = [
-    { label: 'Total Users', value: '10,234', change: '+12%', icon: UsersIcon },
-    { label: 'Active Courses', value: '5', change: '0%', icon: BookIcon },
-    { label: 'Pending Reports', value: '—', change: 'Live queue', icon: FlagIcon },
-    { label: 'Matchmaking Reviews', value: 'Live queue', change: 'Admin', icon: HeartIcon },
-  ];
-
-  const recentUsers = [
-    { id: '1', name: 'Sarah Mitchell', email: 'sarah@example.com', status: 'verified', progress: 75, image: IMAGES.profiles.women[0] },
-    { id: '2', name: 'David Kim', email: 'david@example.com', status: 'pending', progress: 45, image: IMAGES.profiles.men[0] },
-    { id: '3', name: 'Amara Johnson', email: 'amara@example.com', status: 'verified', progress: 100, image: IMAGES.profiles.women[1] },
-    { id: '4', name: 'Michael Roberts', email: 'michael@example.com', status: 'verified', progress: 60, image: IMAGES.profiles.men[1] },
+    { label: 'Total Users', value: overview?.total_users, icon: UsersIcon },
+    { label: 'Published Courses', value: overview?.published_courses, icon: BookIcon },
+    { label: 'Pending Reports', value: overview?.pending_community_reports, icon: FlagIcon },
+    { label: 'Pending Match Reviews', value: overview?.pending_matchmaking_reviews, icon: HeartIcon },
   ];
 
   return (
@@ -118,26 +182,27 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         {/* Stats */}
-        {isAdmin && <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        {isAdmin && activeTab === 'overview' && <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {stats.map((stat, index) => {
             const Icon = stat.icon;
             return (
               <div key={index} className="bg-white rounded-xl p-4 shadow-sm">
                 <div className="flex items-center justify-between mb-2">
                   <Icon size={20} className="text-[#c4785a]" />
-                  <span className={`text-xs font-medium ${
-                    stat.change.startsWith('+') ? 'text-emerald-600' : 
-                    stat.change.startsWith('-') ? 'text-red-600' : 'text-gray-500'
-                  }`}>
-                    {stat.change}
-                  </span>
                 </div>
-                <p className="text-2xl font-bold text-[#1e3a5f]">{stat.value}</p>
+                <p className="text-2xl font-bold text-[#1e3a5f]">{overviewLoading ? '—' : (stat.value ?? '—').toLocaleString()}</p>
                 <p className="text-sm text-gray-500">{stat.label}</p>
               </div>
             );
           })}
         </div>}
+
+        {isAdmin && activeTab === 'overview' && overviewError && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-sm text-red-800" role="alert">
+            <p>{overviewError}</p>
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => void loadOverview()}>Retry overview</Button>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex flex-wrap gap-1 bg-white rounded-xl p-1 mb-8 shadow-sm">
@@ -148,6 +213,7 @@ export const AdminDashboard: React.FC = () => {
             { id: 'matching', label: 'Matching' },
             { id: 'coaching', label: 'Coaching' },
             { id: 'payments', label: 'Payments' },
+            { id: 'courses', label: 'Courses / Pricing' },
           ].filter((tab) => tab.id === 'moderation' || isAdmin).map((tab) => (
             <button
               key={tab.id}
@@ -168,39 +234,44 @@ export const AdminDashboard: React.FC = () => {
           <div className="grid lg:grid-cols-2 gap-6">
             {/* Recent Users */}
             <div className="bg-white rounded-xl shadow-sm p-6">
-              <h2 className="text-lg font-bold text-[#1e3a5f] mb-4">Recent Users</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-[#1e3a5f]">Recent Users</h2>
+                {recentUsersError && <Button variant="outline" size="sm" onClick={() => void loadRecentUsers()}>Retry</Button>}
+              </div>
+              {recentUsersError && <p className="text-sm text-red-700 mb-3" role="alert">{recentUsersError}</p>}
+              {recentUsersLoading && <p className="text-sm text-gray-500" role="status">Loading users…</p>}
+              {!recentUsersLoading && !recentUsersError && recentUsers.length === 0 && <p className="text-gray-500">No user records yet.</p>}
               <div className="space-y-3">
-                {recentUsers.map((user) => (
-                  <div key={user.id} className="flex items-center justify-between p-3 bg-[#faf6f1] rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <img src={user.image} alt={user.name} className="w-10 h-10 rounded-full object-cover" />
-                      <div>
-                        <p className="font-medium text-[#1e3a5f]">{user.name}</p>
-                        <p className="text-sm text-gray-500">{user.email}</p>
-                      </div>
+                {recentUsers.map((recentUser) => (
+                  <div key={recentUser.user_id} className="flex items-center justify-between p-3 bg-[#faf6f1] rounded-lg">
+                    <div className="min-w-0">
+                      <p className="font-medium text-[#1e3a5f] truncate">{recentUser.full_name || 'Name not provided'}</p>
+                      <p className="text-sm text-gray-500 truncate">{recentUser.email}</p>
+                      <p className="text-xs text-gray-400">Joined {new Date(recentUser.created_at).toLocaleDateString()}</p>
                     </div>
-                    <div className="text-right">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        user.status === 'verified' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                      }`}>
-                        {user.status}
+                    <div className="text-right shrink-0">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${recentUser.onboarding_completed ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'}`}>
+                        {recentUser.onboarding_completed ? 'Onboarding complete' : 'Onboarding incomplete'}
                       </span>
-                      <p className="text-xs text-gray-400 mt-1">{user.progress}% complete</p>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Activity Chart Placeholder */}
             <div className="bg-white rounded-xl shadow-sm p-6">
-              <h2 className="text-lg font-bold text-[#1e3a5f] mb-4">User Activity</h2>
-              <div className="h-64 bg-[#faf6f1] rounded-lg flex items-center justify-center">
-                <div className="text-center">
-                  <TrendingUpIcon size={48} className="text-gray-300 mx-auto mb-2" />
-                  <p className="text-gray-500">Activity chart would display here</p>
-                </div>
-              </div>
+              <h2 className="text-lg font-bold text-[#1e3a5f] mb-4">Operations</h2>
+              {overviewLoading && <p className="text-sm text-gray-500" role="status">Loading metrics…</p>}
+              {!overviewLoading && overview && <dl className="grid grid-cols-2 gap-4">
+                <Metric label="Users onboarded" value={overview.onboarded_users} />
+                <Metric label="Active enrollments" value={overview.active_enrollments} />
+                <Metric label="Listed coaches" value={overview.listed_coaches} />
+                <Metric label="Pending coaching" value={overview.pending_coaching_bookings} />
+                <Metric label="Production successful payments" value={overview.successful_payments} />
+                <Metric label="Production failed payments" value={overview.failed_payments} />
+                <Metric label="Production verified UGX volume" value={`UGX ${overview.verified_payment_volume_ugx.toLocaleString()}`} />
+              </dl>}
+              {!overviewLoading && !overview && !overviewError && <p className="text-gray-500">No overview data available.</p>}
             </div>
           </div>
         )}
@@ -209,62 +280,51 @@ export const AdminDashboard: React.FC = () => {
         {activeTab === 'users' && (
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
             <div className="p-6 border-b border-gray-100">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-[#1e3a5f]">User Management</h2>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold text-[#1e3a5f]">Users</h2>
+                  <p className="text-sm text-gray-500 mt-1">Read-only account summary</p>
+                </div>
                 <input
                   type="text"
                   placeholder="Search users..."
+                  value={userSearch}
+                  onChange={(event) => setUserSearch(event.target.value)}
                   className="px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#1e3a5f] focus:border-transparent"
                 />
               </div>
             </div>
-            <table className="w-full">
+            {usersError && <div className="p-6 text-sm text-red-700" role="alert">{usersError}<Button variant="outline" size="sm" className="ml-3" onClick={() => void loadUsers()}>Retry</Button></div>}
+            {usersLoading && adminUsers.length === 0 && <p className="p-6 text-gray-500" role="status">Loading users…</p>}
+            {!usersLoading && !usersError && adminUsers.length === 0 && <p className="p-6 text-gray-500">No users match this search.</p>}
+            {adminUsers.length > 0 && <div className="overflow-x-auto"><table className="w-full min-w-[850px]">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progress</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Joined</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Onboarding</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Roles</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {recentUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50">
+                {adminUsers.map((adminUser) => (
+                  <tr key={adminUser.user_id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
-                      <div className="flex items-center space-x-3">
-                        <img src={user.image} alt={user.name} className="w-10 h-10 rounded-full object-cover" />
-                        <div>
-                          <p className="font-medium text-[#1e3a5f]">{user.name}</p>
-                          <p className="text-sm text-gray-500">{user.email}</p>
-                        </div>
+                      <div>
+                        <p className="font-medium text-[#1e3a5f]">{adminUser.full_name || 'Name not provided'}</p>
+                        <p className="text-sm text-gray-500">{adminUser.email}</p>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        user.status === 'verified' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                      }`}>
-                        {user.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="w-24 bg-gray-200 rounded-full h-2">
-                        <div className="bg-[#c4785a] h-2 rounded-full" style={{ width: `${user.progress}%` }} />
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex space-x-2">
-                        <Button variant="ghost" size="sm">
-                          <EyeIcon size={16} />
-                        </Button>
-                        <Button variant="ghost" size="sm">
-                          <ShieldIcon size={16} />
-                        </Button>
-                      </div>
-                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{new Date(adminUser.created_at).toLocaleDateString()}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{adminUser.onboarding_completed ? 'Complete' : 'Incomplete'}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{[adminUser.city, adminUser.country_code].filter(Boolean).join(', ') || '—'}</td>
+                    <td className="px-6 py-4"><div className="flex flex-wrap gap-1">{adminUser.roles.map((role) => <span key={role} className="px-2 py-1 rounded-full bg-gray-100 text-gray-700 text-xs">{role}</span>)}</div></td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>}
+            {usersHasMore && <div className="p-4 text-center border-t border-gray-100"><Button variant="outline" onClick={() => usersCursor && void loadUsers(true, usersCursor)} disabled={usersLoading}>{usersLoading ? 'Loading…' : 'Load more'}</Button></div>}
           </div>
         )}
 
@@ -311,7 +371,15 @@ export const AdminDashboard: React.FC = () => {
         )}
         {activeTab === 'coaching' && isAdmin && <AdminCoachingPanel />}
         {activeTab === 'payments' && isAdmin && <AdminPaymentsPanel />}
+        {activeTab === 'courses' && isAdmin && <AdminCoursePricingPanel />}
       </div>
     </div>
   );
 };
+
+const Metric: React.FC<{ label: string; value: number | string }> = ({ label, value }) => (
+  <div className="rounded-lg bg-[#faf6f1] p-3">
+    <dt className="text-xs text-gray-500">{label}</dt>
+    <dd className="mt-1 font-semibold text-[#1e3a5f]">{typeof value === 'number' ? value.toLocaleString() : value}</dd>
+  </div>
+);

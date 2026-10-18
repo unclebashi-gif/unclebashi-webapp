@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '@/lib/store';
 import { useCourseProgress } from '@/hooks/useCourseProgress';
-import { getAccessibleLessons, getPublishedCourseModules, getPublishedCourses } from '@/lib/educationService';
+import { COURSE_AUDIENCE_RESTRICTION_MESSAGE, getAccessibleLessons, getPublishedCourseModules, getPublishedCourses, isCourseAudienceEligible } from '@/lib/educationService';
+import { getMyCoursePayments } from '@/lib/paymentService';
+import type { CoursePaymentSummary } from '@/types/payments';
 import type { Course, CourseModule, Lesson } from '@/types/education';
 import { VideoPlayer } from '../video/VideoPlayer';
 import { MtnCheckoutDialog } from '../payment/MtnCheckoutDialog';
+import { PesapalCheckoutDialog } from '../payment/PesapalCheckoutDialog';
 import { Button } from '../ui/button';
 import { ProgressBar } from '../ui/ProgressBar';
 import { BookIcon, CheckCircleIcon, ClockIcon, PlayIcon } from '../ui/Icons';
@@ -44,10 +47,35 @@ export const EducationHub: React.FC = () => {
   const [reflectionSaveSucceeded, setReflectionSaveSucceeded] = useState(false);
   const [isSavingReflection, setIsSavingReflection] = useState(false);
   const [paymentCourse, setPaymentCourse] = useState<Course | null>(null);
+  const [recoveryPayment, setRecoveryPayment] = useState<CoursePaymentSummary | null>(null);
+  const [recoverablePayments, setRecoverablePayments] = useState<CoursePaymentSummary[]>([]);
+  const [recoverablePaymentsLoading, setRecoverablePaymentsLoading] = useState(false);
+  const [recoverablePaymentsError, setRecoverablePaymentsError] = useState<string | null>(null);
+
+  const loadRecoverablePayments = useCallback(async () => {
+    if (!userId) {
+      setRecoverablePayments([]);
+      setRecoverablePaymentsError(null);
+      setRecoverablePaymentsLoading(false);
+      return;
+    }
+    setRecoverablePaymentsLoading(true);
+    setRecoverablePaymentsError(null);
+    try {
+      const rows = await getMyCoursePayments();
+      setRecoverablePayments(rows.filter((row) => row.status === 'created' || row.status === 'pending'));
+    } catch (error) {
+      setRecoverablePaymentsError(error instanceof Error ? error.message : 'Could not load pending payments.');
+    } finally {
+      setRecoverablePaymentsLoading(false);
+    }
+  }, [userId]);
+
+  useEffect(() => { void loadRecoverablePayments(); }, [loadRecoverablePayments]);
 
   const refreshAfterPayment = useCallback(async () => {
-    await refreshProgress();
-  }, [refreshProgress]);
+    await Promise.all([refreshProgress(), loadRecoverablePayments()]);
+  }, [loadRecoverablePayments, refreshProgress]);
 
   const activeEnrollment = useMemo(() => {
     if (!selectedCourse) return null;
@@ -104,14 +132,23 @@ export const EducationHub: React.FC = () => {
     setLessons([]);
     setDetailsLoadedCourseId(null);
     const courseId = selectedCourse.id;
-    const canReadPaidContent = selectedCourse.is_free || enrollments.some(
+    const hasActiveCourseEnrollment = enrollments.some(
       (enrollment) => enrollment.course_id === courseId && enrollment.status === 'active',
     );
+    const canReadPaidContent = selectedCourse.is_free || hasActiveCourseEnrollment;
 
-    void Promise.all([
-      getPublishedCourseModules(courseId),
-      canReadPaidContent ? getAccessibleLessons(courseId) : Promise.resolve([] as Lesson[]),
-    ])
+    void (async () => {
+      // Recheck restricted courses through the caller-scoped server function.
+      // Existing active enrollments are preserved if targeting changes later.
+      if (selectedCourse.audience_gender !== 'all' && !hasActiveCourseEnrollment
+          && !(await isCourseAudienceEligible(courseId))) {
+        throw new Error(COURSE_AUDIENCE_RESTRICTION_MESSAGE);
+      }
+      return await Promise.all([
+        getPublishedCourseModules(courseId),
+        canReadPaidContent ? getAccessibleLessons(courseId) : Promise.resolve([] as Lesson[]),
+      ]);
+    })()
       .then(([loadedModules, loadedLessons]) => {
         if (!current) return;
         setModules(loadedModules);
@@ -157,9 +194,25 @@ export const EducationHub: React.FC = () => {
       await enrollInFreeCourse(course.id);
       setSelectedCourse(course);
     } catch (error) {
-      setEnrollmentError(error instanceof Error ? error.message : 'Enrollment failed. Please try again.');
+      const message = error instanceof Error ? error.message : 'Enrollment failed. Please try again.';
+      setEnrollmentError(message.includes('EDUCATION_AUDIENCE_INELIGIBLE')
+        ? COURSE_AUDIENCE_RESTRICTION_MESSAGE : message);
     } finally {
       setEnrollingCourseId(null);
+    }
+  };
+
+  const handlePaidCheckout = async (course: Course) => {
+    setEnrollmentError(null);
+    try {
+      if (course.audience_gender !== 'all' && !(await isCourseAudienceEligible(course.id))) {
+        setEnrollmentError(COURSE_AUDIENCE_RESTRICTION_MESSAGE);
+        return;
+      }
+      setRecoveryPayment(null);
+      setPaymentCourse(course);
+    } catch (error) {
+      setEnrollmentError(error instanceof Error ? error.message : 'Course eligibility could not be checked. Please try again.');
     }
   };
 
@@ -250,8 +303,13 @@ export const EducationHub: React.FC = () => {
     return (
       <div className="min-h-screen bg-[#faf6f1] py-8">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-          <MtnCheckoutDialog course={paymentCourse} isOpen={Boolean(paymentCourse)}
-            onClose={() => setPaymentCourse(null)} onAccessGranted={refreshAfterPayment} />
+          <PesapalCheckoutDialog course={paymentCourse}
+            recoveryPayment={recoveryPayment?.provider === 'pesapal' ? recoveryPayment : null}
+            isOpen={Boolean(paymentCourse || recoveryPayment?.provider === 'pesapal')}
+            onClose={() => { setPaymentCourse(null); setRecoveryPayment(null); }} onAccessGranted={refreshAfterPayment} />
+          <MtnCheckoutDialog course={null} recoveryPayment={recoveryPayment?.provider === 'mtn' ? recoveryPayment : null}
+            isOpen={recoveryPayment?.provider === 'mtn'}
+            onClose={() => { setPaymentCourse(null); setRecoveryPayment(null); }} onAccessGranted={refreshAfterPayment} />
           <Button variant="ghost" onClick={() => setSelectedCourse(null)} className="mb-6">
             ← Back to Courses
           </Button>
@@ -301,10 +359,11 @@ export const EducationHub: React.FC = () => {
             )}
             {!selectedCourse.is_free && !hasActiveEnrollment && (
               <div className="mt-6">
-                <Button onClick={() => setPaymentCourse(selectedCourse)}
+                <Button onClick={() => void handlePaidCheckout(selectedCourse)}
                   disabled={selectedCourse.price_amount === null || !selectedCourse.currency}>
                   Purchase course
                 </Button>
+                {enrollmentError && <p className="mt-3 text-sm text-red-700" role="alert">{enrollmentError}</p>}
                 {(!selectedCourse.price_amount || !selectedCourse.currency) && (
                   <p className="mt-3 text-sm text-amber-800" role="status">Checkout is unavailable because course pricing is not configured.</p>
                 )}
@@ -371,8 +430,13 @@ export const EducationHub: React.FC = () => {
   return (
     <main className="min-h-screen bg-[#faf6f1] py-8">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <MtnCheckoutDialog course={paymentCourse} isOpen={Boolean(paymentCourse)}
-          onClose={() => setPaymentCourse(null)} onAccessGranted={refreshAfterPayment} />
+        <PesapalCheckoutDialog course={paymentCourse}
+          recoveryPayment={recoveryPayment?.provider === 'pesapal' ? recoveryPayment : null}
+          isOpen={Boolean(paymentCourse || recoveryPayment?.provider === 'pesapal')}
+          onClose={() => { setPaymentCourse(null); setRecoveryPayment(null); }} onAccessGranted={refreshAfterPayment} />
+        <MtnCheckoutDialog course={null} recoveryPayment={recoveryPayment?.provider === 'mtn' ? recoveryPayment : null}
+          isOpen={recoveryPayment?.provider === 'mtn'}
+          onClose={() => { setPaymentCourse(null); setRecoveryPayment(null); }} onAccessGranted={refreshAfterPayment} />
         <header className="mb-8">
           <h1 className="text-3xl font-bold text-[#1e3a5f] mb-2">Marriage Preparation</h1>
           <p className="text-gray-600">Build a strong foundation for your future marriage with our courses.</p>
@@ -380,6 +444,29 @@ export const EducationHub: React.FC = () => {
 
         {catalogLoading && <LoadingState label="Loading courses…" />}
         {!catalogLoading && catalogError && <InlineError message={catalogError} onRetry={() => void loadCatalog()} />}
+        {recoverablePaymentsLoading && <p className="mb-5 text-sm text-gray-500" role="status">Checking for payments awaiting confirmation…</p>}
+        {recoverablePaymentsError && <InlineError message={recoverablePaymentsError} onRetry={() => void loadRecoverablePayments()} />}
+        {!catalogLoading && recoverablePayments.length > 0 && (
+          <section className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-5" aria-labelledby="pending-course-payments">
+            <h2 id="pending-course-payments" className="font-semibold text-[#1e3a5f]">Payments awaiting confirmation</h2>
+            <p className="mt-1 text-sm text-gray-600">Resume a saved payment to check its server-verified status.</p>
+            <div className="mt-4 space-y-3">
+              {recoverablePayments.map((payment) => (
+                <div key={payment.payment_id} className="flex flex-col gap-3 rounded-xl bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium text-[#1e3a5f]">{payment.course_title}</p>
+                    <p className="text-sm text-gray-600">{payment.provider === 'pesapal'
+                      ? payment.redirect_url ? 'Pesapal checkout is ready to resume' : 'Pesapal payment is being verified'
+                      : payment.status === 'created' ? 'MTN payment request has not been sent yet' : 'MTN payment is still being confirmed'} · {payment.currency} {new Intl.NumberFormat('en-UG', { maximumFractionDigits: 0 }).format(payment.amount)}</p>
+                  </div>
+                  <Button variant="outline" onClick={() => { setPaymentCourse(null); setRecoveryPayment(payment); }}>
+                    {payment.provider === 'pesapal' && payment.redirect_url ? 'Continue to Pesapal' : 'Resume payment'}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
         {!catalogLoading && !catalogError && courses.length === 0 && (
           <EmptyPanel message="Our marriage preparation courses are being prepared. Please check back soon." />
         )}
@@ -414,7 +501,7 @@ export const EducationHub: React.FC = () => {
                       <Button variant="outline" onClick={() => setSelectedCourse(course)}>View course</Button>
                     )}
                     {!course.is_free && !enrollment && (
-                      <Button variant="outline" onClick={() => setPaymentCourse(course)}
+                      <Button variant="outline" onClick={() => void handlePaidCheckout(course)}
                         disabled={course.price_amount === null || !course.currency}>
                         {course.price_amount !== null && course.currency
                           ? `Purchase · ${course.currency} ${new Intl.NumberFormat('en-UG', { maximumFractionDigits: 0 }).format(course.price_amount)}`

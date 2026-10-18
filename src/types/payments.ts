@@ -4,7 +4,10 @@ export type CoursePaymentStatus =
   | 'successful'
   | 'failed'
   | 'cancelled'
-  | 'expired';
+  | 'expired'
+  | 'reversed';
+
+export type CoursePaymentProvider = 'mtn' | 'pesapal';
 
 export interface CoursePaymentSummary {
   payment_id: string;
@@ -16,7 +19,11 @@ export interface CoursePaymentSummary {
   created_at: string;
   verified_at: string | null;
   access_granted: boolean;
+  provider: CoursePaymentProvider;
+  redirect_url: string | null;
 }
+
+export type PaymentProviderEnvironment = 'sandbox' | 'production';
 
 export interface AdminPayment {
   payment_id: string;
@@ -27,13 +34,14 @@ export interface AdminPayment {
   course_title: string;
   amount: number;
   currency: string;
-  provider: 'mtn_momo';
+  provider: CoursePaymentProvider;
   payer_msisdn_masked: string | null;
   status: CoursePaymentStatus;
   provider_reference: string;
   verified_at: string | null;
   access_granted_at: string | null;
   failure_reason: string | null;
+  provider_environment: PaymentProviderEnvironment;
 }
 
 export interface PaymentFunctionResult {
@@ -43,4 +51,5 @@ export interface PaymentFunctionResult {
   currency: string;
   status: CoursePaymentStatus;
   access_granted: boolean;
+  redirect_url?: string | null;
 }
