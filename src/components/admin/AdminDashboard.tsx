@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { useAppStore } from '@/lib/store';
 import { getCommunityReports, moderateCommunityContent, reviewCommunityReport, suspendCommunityUser } from '@/lib/communityService';
@@ -8,7 +9,7 @@ import type { AdminOverview, AdminUser } from '@/types/admin';
 import { AdminCoachingPanel } from './AdminCoachingPanel';
 import { AdminMatchmakingPanel } from './AdminMatchmakingPanel';
 import { AdminPaymentsPanel } from './AdminPaymentsPanel';
-import { AdminCoursePricingPanel } from './AdminCoursePricingPanel';
+import { AdminCoursesPanel } from './AdminCoursesPanel';
 import {
   UsersIcon,
   BookIcon,
@@ -16,13 +17,35 @@ import {
   HeartIcon,
 } from '../ui/Icons';
 
+const ADMIN_TABS = ['overview', 'users', 'moderation', 'matching', 'coaching', 'payments', 'courses'] as const;
+type AdminTab = (typeof ADMIN_TABS)[number];
+
 export const AdminDashboard: React.FC = () => {
   const { user } = useAppStore();
   const isAdmin = user?.roles.includes('admin') ?? false;
   const isModerator = user?.roles.includes('moderator') ?? false;
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'moderation' | 'matching' | 'coaching' | 'payments' | 'courses'>(() =>
-    isModerator && !isAdmin ? 'moderation' : 'overview'
-  );
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const activeTab: AdminTab = isAdmin
+    ? ADMIN_TABS.includes(requestedTab as AdminTab) ? requestedTab as AdminTab : 'overview'
+    : isModerator ? 'moderation' : 'overview';
+
+  useEffect(() => {
+    if (!isAdmin && !isModerator) return;
+    if (requestedTab === activeTab) return;
+
+    const normalizedParams = new URLSearchParams(searchParams);
+    normalizedParams.set('tab', activeTab);
+    setSearchParams(normalizedParams, { replace: true });
+  }, [activeTab, isAdmin, isModerator, requestedTab, searchParams, setSearchParams]);
+
+  const selectTab = (tab: AdminTab) => {
+    if (isAdmin || (isModerator && tab === 'moderation')) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.set('tab', tab);
+      setSearchParams(nextParams);
+    }
+  };
   const [reports, setReports] = useState<CommunityReport[]>([]);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reportsError, setReportsError] = useState('');
@@ -213,11 +236,11 @@ export const AdminDashboard: React.FC = () => {
             { id: 'matching', label: 'Matching' },
             { id: 'coaching', label: 'Coaching' },
             { id: 'payments', label: 'Payments' },
-            { id: 'courses', label: 'Courses / Pricing' },
+            { id: 'courses', label: 'Courses' },
           ].filter((tab) => tab.id === 'moderation' || isAdmin).map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as typeof activeTab)}
+              onClick={() => selectTab(tab.id as AdminTab)}
               className={`min-w-[96px] flex-1 py-3 rounded-lg font-medium transition-colors ${
                 activeTab === tab.id
                   ? 'bg-[#1e3a5f] text-white'
@@ -371,7 +394,7 @@ export const AdminDashboard: React.FC = () => {
         )}
         {activeTab === 'coaching' && isAdmin && <AdminCoachingPanel />}
         {activeTab === 'payments' && isAdmin && <AdminPaymentsPanel />}
-        {activeTab === 'courses' && isAdmin && <AdminCoursePricingPanel />}
+        {activeTab === 'courses' && isAdmin && <AdminCoursesPanel />}
       </div>
     </div>
   );
