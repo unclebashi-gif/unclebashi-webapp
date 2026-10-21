@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button } from '../ui/button';
+import { AdminCourseLessonsPanel } from './AdminCourseLessonsPanel';
+import { getAdminModuleLessonCounts } from '@/lib/adminLessonService';
 import { updateAdminCourseCommercialTerms } from '@/lib/adminService';
 import {
   createAdminCourse,
@@ -115,6 +117,7 @@ export const AdminCoursesPanel: React.FC = () => {
   const [moduleCounts, setModuleCounts] = useState<Record<string, number>>({});
   const [moduleCountError, setModuleCountError] = useState('');
   const [modulesByCourse, setModulesByCourse] = useState<Record<string, CourseModule[]>>({});
+  const [lessonCountsByModule, setLessonCountsByModule] = useState<Record<string, number>>({});
   const [moduleLoadingIds, setModuleLoadingIds] = useState<Set<string>>(new Set());
   const [moduleErrors, setModuleErrors] = useState<Record<string, string>>({});
   const [moduleNotices, setModuleNotices] = useState<Record<string, string>>({});
@@ -270,6 +273,15 @@ export const AdminCoursesPanel: React.FC = () => {
     try {
       const rows = await getAdminCourseModules(courseId);
       setModulesByCourse((current) => ({ ...current, [courseId]: rows }));
+      try {
+        const counts = await getAdminModuleLessonCounts(rows.map((module) => module.id));
+        setLessonCountsByModule((current) => ({ ...current, ...counts }));
+      } catch (error) {
+        setModuleErrors((current) => ({
+          ...current,
+          [courseId]: error instanceof Error ? error.message : 'Could not load lesson counts.',
+        }));
+      }
     } catch (error) {
       setModuleErrors((current) => ({
         ...current,
@@ -487,6 +499,14 @@ export const AdminCoursesPanel: React.FC = () => {
                               </div>}
                             </div>
                           )}
+                          <AdminCourseLessonsPanel
+                            module={module}
+                            courseStatus={course.status}
+                            lessonCount={lessonCountsByModule[module.id]}
+                            onLessonChanged={async () => {
+                              await Promise.all([loadModules(course.id), loadCourses()]);
+                            }}
+                          />
                         </div>
                       );
                     })}
