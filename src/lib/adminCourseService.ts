@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import type { Course, CourseAudienceGender, CourseStatus } from '@/types/education';
+import type { Course, CourseAudienceGender, CourseModule, CourseStatus } from '@/types/education';
 
 const COURSE_FIELDS = 'id,slug,title,description,category,thumbnail_url,is_free,audience_gender,price_amount,currency,status,display_order,created_at,updated_at';
 
@@ -97,6 +97,77 @@ export async function getAdminCoursePublicationReadiness(
   const readiness = (data as AdminCoursePublicationReadiness[] | null)?.[0];
   if (!readiness) throw new Error('Publication readiness was not returned. Refresh and try again.');
   return readiness;
+}
+
+export async function getAdminCourseModules(courseId: string): Promise<CourseModule[]> {
+  const { data, error } = await supabase
+    .from('course_modules')
+    .select('*')
+    .eq('course_id', courseId)
+    .order('display_order', { ascending: true })
+    .order('id', { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as CourseModule[];
+}
+
+export async function getAdminCourseModuleCounts(courseIds: string[]): Promise<Record<string, number>> {
+  if (courseIds.length === 0) return {};
+  const { data, error } = await supabase
+    .from('course_modules')
+    .select('course_id')
+    .in('course_id', courseIds);
+
+  if (error) throw error;
+  return (data ?? []).reduce<Record<string, number>>((counts, row) => {
+    counts[row.course_id] = (counts[row.course_id] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+function firstModuleResult(data: unknown): CourseModule {
+  const row = (data as CourseModule[] | null)?.[0];
+  if (!row) throw new Error('The module request returned no module. Refresh and try again.');
+  return row;
+}
+
+export async function createAdminCourseModule(
+  courseId: string,
+  title: string,
+  description: string,
+): Promise<CourseModule> {
+  const { data, error } = await supabase.rpc('admin_create_course_module', {
+    p_course_id: courseId,
+    p_title: title,
+    p_description: description.trim() || null,
+  });
+  if (error) throw error;
+  return firstModuleResult(data);
+}
+
+export async function updateAdminCourseModule(
+  moduleId: string,
+  title: string,
+  description: string,
+): Promise<CourseModule> {
+  const { data, error } = await supabase.rpc('admin_update_course_module', {
+    p_module_id: moduleId,
+    p_title: title,
+    p_description: description.trim() || null,
+  });
+  if (error) throw error;
+  return firstModuleResult(data);
+}
+
+export async function reorderAdminCourseModules(courseId: string, moduleIds: string[]): Promise<void> {
+  const { data, error } = await supabase.rpc('admin_reorder_course_modules', {
+    p_course_id: courseId,
+    p_module_ids: moduleIds,
+  });
+  if (error) throw error;
+  if (!(data as Array<{ course_id: string }> | null)?.[0]) {
+    throw new Error('The module order was not saved. Refresh and try again.');
+  }
 }
 
 export function normalizeCourseMetadata(input: {

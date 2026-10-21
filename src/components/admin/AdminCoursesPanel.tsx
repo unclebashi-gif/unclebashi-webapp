@@ -3,14 +3,19 @@ import { Button } from '../ui/button';
 import { updateAdminCourseCommercialTerms } from '@/lib/adminService';
 import {
   createAdminCourse,
+  createAdminCourseModule,
+  getAdminCourseModuleCounts,
   getAdminCoursePublicationReadiness,
+  getAdminCourseModules,
   getAdminCourses,
   normalizeCourseMetadata,
+  reorderAdminCourseModules,
+  updateAdminCourseModule,
   updateAdminCourseMetadata,
   updateAdminCourseStatus,
 } from '@/lib/adminCourseService';
 import type { AdminCoursePublicationReadiness } from '@/lib/adminCourseService';
-import type { Course, CourseAudienceGender, CourseStatus } from '@/types/education';
+import type { Course, CourseAudienceGender, CourseModule, CourseStatus } from '@/types/education';
 
 interface CourseDraft {
   title: string;
@@ -25,6 +30,7 @@ interface CourseDraft {
 }
 
 type CourseEditor = { mode: 'create' } | { mode: 'edit'; course: Course };
+type ModuleEditor = { courseId: string; moduleId: string | null };
 
 const audienceLabels: Record<CourseAudienceGender, string> = {
   all: 'Everyone',
@@ -105,6 +111,18 @@ export const AdminCoursesPanel: React.FC = () => {
   const [draft, setDraft] = useState<CourseDraft>(blankDraft);
   const [saving, setSaving] = useState(false);
   const [statusSavingId, setStatusSavingId] = useState<string | null>(null);
+  const [expandedModuleCourseId, setExpandedModuleCourseId] = useState<string | null>(null);
+  const [moduleCounts, setModuleCounts] = useState<Record<string, number>>({});
+  const [moduleCountError, setModuleCountError] = useState('');
+  const [modulesByCourse, setModulesByCourse] = useState<Record<string, CourseModule[]>>({});
+  const [moduleLoadingIds, setModuleLoadingIds] = useState<Set<string>>(new Set());
+  const [moduleErrors, setModuleErrors] = useState<Record<string, string>>({});
+  const [moduleNotices, setModuleNotices] = useState<Record<string, string>>({});
+  const [moduleEditor, setModuleEditor] = useState<ModuleEditor | null>(null);
+  const [moduleTitleDraft, setModuleTitleDraft] = useState('');
+  const [moduleDescriptionDraft, setModuleDescriptionDraft] = useState('');
+  const [moduleSaving, setModuleSaving] = useState(false);
+  const [moduleOrderSavingCourseId, setModuleOrderSavingCourseId] = useState<string | null>(null);
 
   const loadCourses = useCallback(async () => {
     setLoading(true);
@@ -112,6 +130,12 @@ export const AdminCoursesPanel: React.FC = () => {
     try {
       const rows = await getAdminCourses();
       setCourses(rows);
+      setModuleCountError('');
+      try {
+        setModuleCounts(await getAdminCourseModuleCounts(rows.map((course) => course.id)));
+      } catch (error) {
+        setModuleCountError(error instanceof Error ? error.message : 'Could not load module counts.');
+      }
 
       const coursesToCheck = rows.filter((course) =>
         course.status === 'draft' && !course.slug.startsWith('sandbox-'),
@@ -240,6 +264,98 @@ export const AdminCoursesPanel: React.FC = () => {
     }
   };
 
+  const loadModules = async (courseId: string) => {
+    setModuleLoadingIds((current) => new Set(current).add(courseId));
+    setModuleErrors((current) => ({ ...current, [courseId]: '' }));
+    try {
+      const rows = await getAdminCourseModules(courseId);
+      setModulesByCourse((current) => ({ ...current, [courseId]: rows }));
+    } catch (error) {
+      setModuleErrors((current) => ({
+        ...current,
+        [courseId]: error instanceof Error ? error.message : 'Could not load course modules.',
+      }));
+    } finally {
+      setModuleLoadingIds((current) => {
+        const next = new Set(current);
+        next.delete(courseId);
+        return next;
+      });
+    }
+  };
+
+  const toggleModules = (courseId: string) => {
+    if (expandedModuleCourseId === courseId) {
+      setExpandedModuleCourseId(null);
+      setModuleEditor(null);
+      return;
+    }
+    setExpandedModuleCourseId(courseId);
+    setModuleEditor(null);
+    void loadModules(courseId);
+  };
+
+  const openModuleEditor = (courseId: string, module: CourseModule | null) => {
+    setModuleErrors((current) => ({ ...current, [courseId]: '' }));
+    setModuleNotices((current) => ({ ...current, [courseId]: '' }));
+    setModuleTitleDraft(module?.title ?? '');
+    setModuleDescriptionDraft(module?.description ?? '');
+    setModuleEditor({ courseId, moduleId: module?.id ?? null });
+  };
+
+  const saveModule = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!moduleEditor) return;
+    const { courseId, moduleId } = moduleEditor;
+    setModuleSaving(true);
+    setModuleErrors((current) => ({ ...current, [courseId]: '' }));
+    setModuleNotices((current) => ({ ...current, [courseId]: '' }));
+    try {
+      if (moduleId) {
+        await updateAdminCourseModule(moduleId, moduleTitleDraft, moduleDescriptionDraft);
+      } else {
+        await createAdminCourseModule(courseId, moduleTitleDraft, moduleDescriptionDraft);
+      }
+      setModuleEditor(null);
+      await Promise.all([loadModules(courseId), loadCourses()]);
+      setModuleNotices((current) => ({
+        ...current,
+        [courseId]: moduleId ? 'Module updated.' : 'Module added.',
+      }));
+    } catch (error) {
+      setModuleErrors((current) => ({
+        ...current,
+        [courseId]: error instanceof Error ? error.message : 'Could not save the module.',
+      }));
+    } finally {
+      setModuleSaving(false);
+    }
+  };
+
+  const moveModule = async (courseId: string, moduleIndex: number, direction: -1 | 1) => {
+    const rows = modulesByCourse[courseId] ?? [];
+    const targetIndex = moduleIndex + direction;
+    if (targetIndex < 0 || targetIndex >= rows.length) return;
+    const reordered = [...rows];
+    [reordered[moduleIndex], reordered[targetIndex]] = [reordered[targetIndex], reordered[moduleIndex]];
+    setModuleOrderSavingCourseId(courseId);
+    setModuleErrors((current) => ({ ...current, [courseId]: '' }));
+    setModuleNotices((current) => ({ ...current, [courseId]: '' }));
+    try {
+      await reorderAdminCourseModules(courseId, reordered.map((module) => module.id));
+      await Promise.all([loadModules(courseId), loadCourses()]);
+      setModuleNotices((current) => ({ ...current, [courseId]: 'Module order updated.' }));
+    } catch (error) {
+      setModuleErrors((current) => ({
+        ...current,
+        [courseId]: error instanceof Error ? error.message : 'Could not reorder modules.',
+      }));
+      await loadModules(courseId);
+    } finally {
+      setModuleOrderSavingCourseId(null);
+    }
+  };
+
   return (
     <section className="rounded-xl bg-white p-6 shadow-sm">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -266,6 +382,10 @@ export const AdminCoursesPanel: React.FC = () => {
           const readiness = publicationReadiness[course.id];
           const readinessLoading = readinessLoadingIds.has(course.id);
           const readinessError = readinessErrors[course.id];
+          const modules = modulesByCourse[course.id] ?? [];
+          const modulesLoading = moduleLoadingIds.has(course.id);
+          const moduleEditingThisCourse = moduleEditor?.courseId === course.id;
+          const modulesEditable = course.status === 'draft';
           return (
             <article key={course.id} className="rounded-xl border border-gray-200 p-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -309,6 +429,86 @@ export const AdminCoursesPanel: React.FC = () => {
                     onClick={() => void changeStatus(course, 'published')}
                   >{statusSavingId === course.id ? 'Saving…' : 'Publish'}</Button>}
                 </div>
+              </div>
+              <div className="mt-4 border-t border-gray-100 pt-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm text-gray-700">
+                    <span className="font-semibold">Modules</span>
+                    <span className="ml-2 text-gray-500">{moduleCounts[course.id] ?? '—'}</span>
+                  </p>
+                  <Button variant="outline" size="sm" onClick={() => toggleModules(course.id)}>
+                    {expandedModuleCourseId === course.id ? 'Hide modules' : 'View modules'}
+                  </Button>
+                </div>
+                {moduleCountError && <p className="mt-2 text-xs text-red-700" role="alert">Module counts could not be loaded: {moduleCountError}</p>}
+                {expandedModuleCourseId === course.id && (
+                  <div className="mt-3 space-y-3 rounded-lg bg-gray-50 p-3">
+                    {!modulesEditable && <p className="text-sm text-amber-800">
+                      {course.status === 'published'
+                        ? 'Return this course to Draft before editing its modules.'
+                        : 'Restore this course to Draft before editing its modules.'}
+                    </p>}
+                    {moduleNotices[course.id] && <p className="text-sm text-emerald-700" role="status">{moduleNotices[course.id]}</p>}
+                    {moduleErrors[course.id] && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">
+                      <p>{moduleErrors[course.id]}</p>
+                      <Button variant="outline" size="sm" className="mt-2" onClick={() => void loadModules(course.id)}>Retry</Button>
+                    </div>}
+                    {modulesLoading && <p className="text-sm text-gray-500" role="status">Loading modules…</p>}
+                    {!modulesLoading && !moduleErrors[course.id] && modules.length === 0 && <p className="text-sm text-gray-500">No modules have been added yet.</p>}
+                    {!modulesLoading && modules.map((module, index) => {
+                      const editing = moduleEditor?.courseId === course.id && moduleEditor.moduleId === module.id;
+                      return (
+                        <div key={module.id} className="rounded-lg border border-gray-200 bg-white p-3">
+                          {editing ? (
+                            <form className="space-y-3" onSubmit={(event) => void saveModule(event)}>
+                              <label className="block text-sm font-medium text-gray-700">
+                                Module title
+                                <input required maxLength={200} value={moduleTitleDraft} onChange={(event) => setModuleTitleDraft(event.target.value)} className={inputClass} />
+                              </label>
+                              <label className="block text-sm font-medium text-gray-700">
+                                Description
+                                <textarea rows={2} value={moduleDescriptionDraft} onChange={(event) => setModuleDescriptionDraft(event.target.value)} className={inputClass} />
+                              </label>
+                              <div className="flex justify-end gap-2">
+                                <Button type="button" variant="outline" size="sm" onClick={() => setModuleEditor(null)} disabled={moduleSaving}>Cancel</Button>
+                                <Button type="submit" size="sm" disabled={moduleSaving}>{moduleSaving ? 'Saving…' : 'Save module'}</Button>
+                              </div>
+                            </form>
+                          ) : (
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0">
+                                <p className="font-medium text-[#1e3a5f]">{index + 1}. {module.title}</p>
+                                <p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">{module.description || 'No description.'}</p>
+                              </div>
+                              {modulesEditable && <div className="flex shrink-0 flex-wrap gap-2">
+                                <Button variant="outline" size="sm" onClick={() => void moveModule(course.id, index, -1)} disabled={index === 0 || moduleOrderSavingCourseId === course.id || moduleSaving}>Move up</Button>
+                                <Button variant="outline" size="sm" onClick={() => void moveModule(course.id, index, 1)} disabled={index === modules.length - 1 || moduleOrderSavingCourseId === course.id || moduleSaving}>Move down</Button>
+                                <Button variant="outline" size="sm" onClick={() => openModuleEditor(course.id, module)} disabled={moduleSaving || moduleOrderSavingCourseId === course.id}>Edit</Button>
+                              </div>}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {moduleEditingThisCourse && moduleEditor.moduleId === null && (
+                      <form className="space-y-3 rounded-lg border border-dashed border-gray-300 bg-white p-3" onSubmit={(event) => void saveModule(event)}>
+                        <label className="block text-sm font-medium text-gray-700">
+                          Module title
+                          <input required maxLength={200} value={moduleTitleDraft} onChange={(event) => setModuleTitleDraft(event.target.value)} className={inputClass} />
+                        </label>
+                        <label className="block text-sm font-medium text-gray-700">
+                          Description
+                          <textarea rows={2} value={moduleDescriptionDraft} onChange={(event) => setModuleDescriptionDraft(event.target.value)} className={inputClass} />
+                        </label>
+                        <div className="flex justify-end gap-2">
+                          <Button type="button" variant="outline" size="sm" onClick={() => setModuleEditor(null)} disabled={moduleSaving}>Cancel</Button>
+                          <Button type="submit" size="sm" disabled={moduleSaving}>{moduleSaving ? 'Saving…' : 'Add module'}</Button>
+                        </div>
+                      </form>
+                    )}
+                    {modulesEditable && !moduleEditingThisCourse && <Button variant="outline" size="sm" onClick={() => openModuleEditor(course.id, null)} disabled={moduleSaving || moduleOrderSavingCourseId === course.id}>Add module</Button>}
+                  </div>
+                )}
               </div>
             </article>
           );
