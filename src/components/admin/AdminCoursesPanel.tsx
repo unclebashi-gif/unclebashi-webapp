@@ -3,11 +3,13 @@ import { Button } from '../ui/button';
 import { updateAdminCourseCommercialTerms } from '@/lib/adminService';
 import {
   createAdminCourse,
+  getAdminCoursePublicationReadiness,
   getAdminCourses,
   normalizeCourseMetadata,
   updateAdminCourseMetadata,
   updateAdminCourseStatus,
 } from '@/lib/adminCourseService';
+import type { AdminCoursePublicationReadiness } from '@/lib/adminCourseService';
 import type { Course, CourseAudienceGender, CourseStatus } from '@/types/education';
 
 interface CourseDraft {
@@ -92,6 +94,9 @@ function statusAction(course: Course): { label: string; status: CourseStatus } |
 
 export const AdminCoursesPanel: React.FC = () => {
   const [courses, setCourses] = useState<Course[]>([]);
+  const [publicationReadiness, setPublicationReadiness] = useState<Record<string, AdminCoursePublicationReadiness>>({});
+  const [readinessErrors, setReadinessErrors] = useState<Record<string, string>>({});
+  const [readinessLoadingIds, setReadinessLoadingIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [saveError, setSaveError] = useState('');
@@ -105,9 +110,34 @@ export const AdminCoursesPanel: React.FC = () => {
     setLoading(true);
     setLoadError('');
     try {
-      setCourses(await getAdminCourses());
+      const rows = await getAdminCourses();
+      setCourses(rows);
+
+      const coursesToCheck = rows.filter((course) =>
+        course.status === 'draft' && !course.slug.startsWith('sandbox-'),
+      );
+      setReadinessLoadingIds(new Set(coursesToCheck.map((course) => course.id)));
+      const checks = await Promise.allSettled(
+        coursesToCheck.map((course) => getAdminCoursePublicationReadiness(course.id)),
+      );
+      const nextReadiness: Record<string, AdminCoursePublicationReadiness> = {};
+      const nextReadinessErrors: Record<string, string> = {};
+      checks.forEach((check, index) => {
+        const courseId = coursesToCheck[index].id;
+        if (check.status === 'fulfilled') {
+          nextReadiness[courseId] = check.value;
+        } else {
+          nextReadinessErrors[courseId] = check.reason instanceof Error
+            ? check.reason.message
+            : 'Could not check publication readiness.';
+        }
+      });
+      setPublicationReadiness(nextReadiness);
+      setReadinessErrors(nextReadinessErrors);
+      setReadinessLoadingIds(new Set());
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'Could not load courses.');
+      setReadinessLoadingIds(new Set());
     } finally {
       setLoading(false);
     }
@@ -195,16 +225,14 @@ export const AdminCoursesPanel: React.FC = () => {
     }
   };
 
-  const changeStatus = async (course: Course) => {
-    const action = statusAction(course);
-    if (!action) return;
+  const changeStatus = async (course: Course, nextStatus: CourseStatus) => {
     setStatusSavingId(course.id);
     setSaveError('');
     setSuccess('');
     try {
-      await updateAdminCourseStatus(course, action.status);
+      await updateAdminCourseStatus(course, nextStatus);
       await loadCourses();
-      setSuccess(`Course moved to ${action.status}.`);
+      setSuccess(`Course moved to ${nextStatus}.`);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'Could not update course status.');
     } finally {
@@ -235,6 +263,9 @@ export const AdminCoursesPanel: React.FC = () => {
         {courses.map((course) => {
           const sandbox = course.slug.startsWith('sandbox-');
           const action = statusAction(course);
+          const readiness = publicationReadiness[course.id];
+          const readinessLoading = readinessLoadingIds.has(course.id);
+          const readinessError = readinessErrors[course.id];
           return (
             <article key={course.id} className="rounded-xl border border-gray-200 p-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -253,13 +284,30 @@ export const AdminCoursesPanel: React.FC = () => {
                     <p>Display order: <span className="font-medium text-gray-800">{course.display_order}</span></p>
                     <p>Updated: <span className="font-medium text-gray-800">{new Date(course.updated_at).toLocaleDateString()}</span></p>
                   </div>
-                  {sandbox && <p className="mt-2 text-xs text-orange-800">Preserved for payment history and kept in draft status.</p>}
-                  {course.status === 'draft' && <p className="mt-2 text-xs text-gray-500">Add and validate course content before publishing.</p>}
+                  {sandbox && <p className="mt-2 text-xs text-orange-800">Preserved for payment history. Sandbox/test courses cannot be published.</p>}
+                  {course.status === 'draft' && !sandbox && readinessLoading && <p className="mt-2 text-xs text-gray-500" role="status">Checking publication readiness…</p>}
+                  {course.status === 'draft' && !sandbox && readinessError && <p className="mt-2 text-xs text-red-700" role="alert">Could not check publication readiness: {readinessError}</p>}
+                  {course.status === 'draft' && !sandbox && readiness && (
+                    readiness.can_publish
+                      ? <p className="mt-2 text-xs font-medium text-emerald-700">Ready to publish.</p>
+                      : <div className="mt-2 text-xs text-gray-600">
+                        <p>This course is not ready to publish:</p>
+                        <ul className="mt-1 list-inside list-disc">
+                          {readiness.reasons.map((reason) => <li key={reason}>{reason}</li>)}
+                        </ul>
+                      </div>
+                  )}
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">
                   <Button variant="outline" size="sm" onClick={() => openEdit(course)}>Edit course</Button>
-                  {action && <Button variant="outline" size="sm" disabled={statusSavingId === course.id} onClick={() => void changeStatus(course)}>{statusSavingId === course.id ? 'Saving…' : action.label}</Button>}
-                  {course.status === 'draft' && <Button variant="outline" size="sm" disabled title="Add and validate course content before publishing">Publish unavailable</Button>}
+                  {action && <Button variant="outline" size="sm" disabled={statusSavingId === course.id} onClick={() => void changeStatus(course, action.status)}>{statusSavingId === course.id ? 'Saving…' : action.label}</Button>}
+                  {course.status === 'draft' && <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={sandbox || !readiness?.can_publish || readinessLoading || Boolean(readinessError) || statusSavingId === course.id}
+                    title={sandbox ? 'Sandbox/test courses cannot be published' : readiness?.can_publish ? 'Publish this course' : 'Course content and commercial terms must pass publication readiness'}
+                    onClick={() => void changeStatus(course, 'published')}
+                  >{statusSavingId === course.id ? 'Saving…' : 'Publish'}</Button>}
                 </div>
               </div>
             </article>

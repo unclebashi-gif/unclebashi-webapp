@@ -12,8 +12,17 @@ export interface CreateAdminCourseInput extends AdminCourseMetadata {
   slug: string;
 }
 
+export interface AdminCoursePublicationReadiness {
+  course_id: string;
+  can_publish: boolean;
+  module_count: number;
+  published_lesson_count: number;
+  draft_lesson_count: number;
+  reasons: string[];
+}
+
 const allowedStatusTransitions: Record<CourseStatus, CourseStatus[]> = {
-  draft: ['archived'],
+  draft: ['published', 'archived'],
   published: ['draft'],
   archived: ['draft'],
 };
@@ -35,7 +44,6 @@ export async function createAdminCourse(input: CreateAdminCourseInput): Promise<
     .from('courses')
     .insert({
       ...input,
-      status: 'draft',
     })
     .select(COURSE_FIELDS)
     .single();
@@ -67,15 +75,28 @@ export async function updateAdminCourseStatus(course: Course, nextStatus: Course
 
   if (!safeNextStatus) throw new Error('That course status change is not available.');
 
-  const { data, error } = await supabase
-    .from('courses')
-    .update({ status: nextStatus })
-    .eq('id', course.id)
-    .select('id')
-    .single();
+  const { data, error } = await supabase.rpc('admin_set_course_status', {
+    p_course_id: course.id,
+    p_status: nextStatus,
+  });
 
   if (error) throw error;
-  if (!data) throw new Error('The course status was not updated. Refresh and try again.');
+  if (!(data as Array<{ course_id: string }> | null)?.[0]) {
+    throw new Error('The course status was not updated. Refresh and try again.');
+  }
+}
+
+export async function getAdminCoursePublicationReadiness(
+  courseId: string,
+): Promise<AdminCoursePublicationReadiness> {
+  const { data, error } = await supabase.rpc('get_admin_course_publication_readiness', {
+    p_course_id: courseId,
+  });
+
+  if (error) throw error;
+  const readiness = (data as AdminCoursePublicationReadiness[] | null)?.[0];
+  if (!readiness) throw new Error('Publication readiness was not returned. Refresh and try again.');
+  return readiness;
 }
 
 export function normalizeCourseMetadata(input: {
