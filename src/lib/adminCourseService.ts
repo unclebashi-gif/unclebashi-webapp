@@ -159,6 +159,16 @@ export async function updateAdminCourseModule(
   return firstModuleResult(data);
 }
 
+export async function removeAdminEmptyCourseModule(moduleId: string): Promise<{ deleted_module_id: string; course_id: string }> {
+  const { data, error } = await supabase.rpc('admin_remove_empty_course_module', {
+    p_module_id: moduleId,
+  });
+  if (error) throw error;
+  const row = (data as Array<{ deleted_module_id: string; course_id: string }> | null)?.[0];
+  if (!row) throw new Error('The empty module was not removed. Refresh and try again.');
+  return row;
+}
+
 export async function reorderAdminCourseModules(courseId: string, moduleIds: string[]): Promise<void> {
   const { data, error } = await supabase.rpc('admin_reorder_course_modules', {
     p_course_id: courseId,

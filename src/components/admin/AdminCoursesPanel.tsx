@@ -1,5 +1,15 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button } from '../ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../ui/alert-dialog';
 import { AdminCourseLessonsPanel } from './AdminCourseLessonsPanel';
 import { getAdminModuleLessonCounts } from '@/lib/adminLessonService';
 import { updateAdminCourseCommercialTerms } from '@/lib/adminService';
@@ -11,6 +21,7 @@ import {
   getAdminCourseModules,
   getAdminCourses,
   normalizeCourseMetadata,
+  removeAdminEmptyCourseModule,
   reorderAdminCourseModules,
   updateAdminCourseModule,
   updateAdminCourseMetadata,
@@ -33,6 +44,7 @@ interface CourseDraft {
 
 type CourseEditor = { mode: 'create' } | { mode: 'edit'; course: Course };
 type ModuleEditor = { courseId: string; moduleId: string | null };
+type ModuleRemovalTarget = { courseId: string; module: CourseModule };
 
 const audienceLabels: Record<CourseAudienceGender, string> = {
   all: 'Everyone',
@@ -117,7 +129,7 @@ export const AdminCoursesPanel: React.FC = () => {
   const [moduleCounts, setModuleCounts] = useState<Record<string, number>>({});
   const [moduleCountError, setModuleCountError] = useState('');
   const [modulesByCourse, setModulesByCourse] = useState<Record<string, CourseModule[]>>({});
-  const [lessonCountsByModule, setLessonCountsByModule] = useState<Record<string, number>>({});
+  const [lessonCountsByModule, setLessonCountsByModule] = useState<Record<string, number | undefined>>({});
   const [moduleLoadingIds, setModuleLoadingIds] = useState<Set<string>>(new Set());
   const [moduleErrors, setModuleErrors] = useState<Record<string, string>>({});
   const [moduleNotices, setModuleNotices] = useState<Record<string, string>>({});
@@ -126,6 +138,8 @@ export const AdminCoursesPanel: React.FC = () => {
   const [moduleDescriptionDraft, setModuleDescriptionDraft] = useState('');
   const [moduleSaving, setModuleSaving] = useState(false);
   const [moduleOrderSavingCourseId, setModuleOrderSavingCourseId] = useState<string | null>(null);
+  const [moduleRemovalTarget, setModuleRemovalTarget] = useState<ModuleRemovalTarget | null>(null);
+  const [moduleRemovingId, setModuleRemovingId] = useState<string | null>(null);
 
   const loadCourses = useCallback(async () => {
     setLoading(true);
@@ -368,6 +382,34 @@ export const AdminCoursesPanel: React.FC = () => {
     }
   };
 
+  const confirmRemoveEmptyModule = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    const target = moduleRemovalTarget;
+    if (!target) return;
+    const { courseId, module } = target;
+    setModuleRemovingId(module.id);
+    setModuleErrors((current) => ({ ...current, [courseId]: '' }));
+    setModuleNotices((current) => ({ ...current, [courseId]: '' }));
+    try {
+      await removeAdminEmptyCourseModule(module.id);
+      setModuleRemovalTarget(null);
+      await Promise.all([loadModules(courseId), loadCourses()]);
+      setLessonCountsByModule((current) => {
+        const next = { ...current };
+        delete next[module.id];
+        return next;
+      });
+      setModuleNotices((current) => ({ ...current, [courseId]: 'Empty module removed.' }));
+    } catch (error) {
+      setModuleErrors((current) => ({
+        ...current,
+        [courseId]: error instanceof Error ? error.message : 'Could not remove the empty module.',
+      }));
+    } finally {
+      setModuleRemovingId(null);
+    }
+  };
+
   return (
     <section className="rounded-xl bg-white p-6 shadow-sm">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -493,9 +535,15 @@ export const AdminCoursesPanel: React.FC = () => {
                                 <p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">{module.description || 'No description.'}</p>
                               </div>
                               {modulesEditable && <div className="flex shrink-0 flex-wrap gap-2">
-                                <Button variant="outline" size="sm" onClick={() => void moveModule(course.id, index, -1)} disabled={index === 0 || moduleOrderSavingCourseId === course.id || moduleSaving}>Move up</Button>
-                                <Button variant="outline" size="sm" onClick={() => void moveModule(course.id, index, 1)} disabled={index === modules.length - 1 || moduleOrderSavingCourseId === course.id || moduleSaving}>Move down</Button>
-                                <Button variant="outline" size="sm" onClick={() => openModuleEditor(course.id, module)} disabled={moduleSaving || moduleOrderSavingCourseId === course.id}>Edit</Button>
+                                <Button variant="outline" size="sm" onClick={() => void moveModule(course.id, index, -1)} disabled={index === 0 || moduleOrderSavingCourseId === course.id || moduleSaving || moduleRemovingId !== null}>Move up</Button>
+                                <Button variant="outline" size="sm" onClick={() => void moveModule(course.id, index, 1)} disabled={index === modules.length - 1 || moduleOrderSavingCourseId === course.id || moduleSaving || moduleRemovingId !== null}>Move down</Button>
+                                <Button variant="outline" size="sm" onClick={() => openModuleEditor(course.id, module)} disabled={moduleSaving || moduleOrderSavingCourseId === course.id || moduleRemovingId !== null}>Edit</Button>
+                                {course.status === 'draft' && lessonCountsByModule[module.id] === 0 && <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setModuleRemovalTarget({ courseId: course.id, module })}
+                                  disabled={moduleSaving || moduleOrderSavingCourseId === course.id || moduleRemovingId !== null}
+                                >{moduleRemovingId === module.id ? 'Removing…' : 'Remove empty module'}</Button>}
                               </div>}
                             </div>
                           )}
@@ -503,6 +551,9 @@ export const AdminCoursesPanel: React.FC = () => {
                             module={module}
                             courseStatus={course.status}
                             lessonCount={lessonCountsByModule[module.id]}
+                            onLessonCountChange={(count) => {
+                              setLessonCountsByModule((current) => ({ ...current, [module.id]: count }));
+                            }}
                             onLessonChanged={async () => {
                               await Promise.all([loadModules(course.id), loadCourses()]);
                             }}
@@ -534,6 +585,32 @@ export const AdminCoursesPanel: React.FC = () => {
           );
         })}
       </div>
+
+      <AlertDialog
+        open={moduleRemovalTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && moduleRemovingId === null) setModuleRemovalTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove empty module?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Remove this empty module? This action cannot be undone.
+              {moduleRemovalTarget && <span className="mt-2 block font-medium text-foreground">{moduleRemovalTarget.module.title}</span>}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {moduleRemovalTarget && moduleErrors[moduleRemovalTarget.courseId] && (
+            <p className="text-sm text-red-700" role="alert">{moduleErrors[moduleRemovalTarget.courseId]}</p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={moduleRemovingId !== null}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={(event) => void confirmRemoveEmptyModule(event)} disabled={moduleRemovingId !== null}>
+              {moduleRemovingId !== null ? 'Removing…' : 'Remove empty module'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {editor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="presentation">

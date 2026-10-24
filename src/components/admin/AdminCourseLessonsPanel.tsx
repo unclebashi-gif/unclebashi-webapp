@@ -15,6 +15,7 @@ interface Props {
   module: CourseModule;
   courseStatus: CourseStatus;
   lessonCount: number | undefined;
+  onLessonCountChange?: (count: number) => void;
   onLessonChanged: () => Promise<void>;
 }
 
@@ -70,6 +71,7 @@ export const AdminCourseLessonsPanel: React.FC<Props> = ({
   module,
   courseStatus,
   lessonCount,
+  onLessonCountChange,
   onLessonChanged,
 }) => {
   const [expanded, setExpanded] = useState(false);
@@ -93,6 +95,7 @@ export const AdminCourseLessonsPanel: React.FC<Props> = ({
     try {
       const rows = await getAdminModuleLessons(module.id);
       setLessons(rows);
+      onLessonCountChange?.(rows.length);
       setReadinessLoading(true);
       const checks = await Promise.allSettled(rows.map((lesson) =>
         getAdminLessonPublicationReadiness(lesson.id),
