@@ -6,7 +6,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme-provider";
 import Index from "./pages/Index";
-import NotFound from "./pages/NotFound";
 import { PasswordResetPage } from "./components/auth/PasswordResetPage";
 import PaymentReturn from "./pages/PaymentReturn";
 
@@ -20,11 +19,9 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/:view" element={<Index />} />
             <Route path="/reset-password" element={<PasswordResetPage />} />
             <Route path="/payment/return" element={<PaymentReturn />} />
-            <Route path="*" element={<NotFound />} />
+            <Route path="/*" element={<Index />} />
           </Routes>
         </BrowserRouter>
       </TooltipProvider>

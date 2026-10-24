@@ -20,6 +20,8 @@ export const useSessionManager = () => {
   const clearUserSession = useAppStore((state) => state.clearUserSession);
   const setCurrentView = useAppStore((state) => state.setCurrentView);
   const requestVersion = useRef(0);
+  const initialBootstrapComplete = useRef(false);
+  const identityUserId = useRef<string | null>(null);
 
   const applyAuthoritativeIdentity = useCallback(async (
     authUser: { id: string; email?: string; user_metadata?: Record<string, unknown> },
@@ -30,6 +32,7 @@ export const useSessionManager = () => {
       if (requestVersion.current !== version) return false;
 
       setAuthenticatedUser(identity.user, identity.onboardingData);
+      identityUserId.current = identity.user.id;
       setRestoreError(null);
       if (!identity.user.onboardingCompleted) {
         setCurrentView('onboarding');
@@ -37,6 +40,7 @@ export const useSessionManager = () => {
       return true;
     } catch (error) {
       if (requestVersion.current !== version) return false;
+      identityUserId.current = null;
       clearUserSession({ navigateHome: false });
       setRestoreError(getIdentityMessage(error));
       return false;
@@ -48,7 +52,10 @@ export const useSessionManager = () => {
     version: number
   ) => {
     const identityLoaded = await applyAuthoritativeIdentity(authUser, version);
-    if (identityLoaded && requestVersion.current === version) setIsRestoring(false);
+    if (identityLoaded && requestVersion.current === version) {
+      initialBootstrapComplete.current = true;
+      setIsRestoring(false);
+    }
   }, [applyAuthoritativeIdentity]);
 
   useEffect(() => {
@@ -65,6 +72,7 @@ export const useSessionManager = () => {
         if (session?.user) {
           restorationResolved = await applyAuthoritativeIdentity(session.user, version);
         } else {
+          identityUserId.current = null;
           clearUserSession();
           setRestoreError(null);
           restorationResolved = true;
@@ -77,7 +85,10 @@ export const useSessionManager = () => {
       } finally {
         // An auth event may have started a newer identity load while this
         // request was pending. Only the latest request can resolve startup.
-        if (mounted && requestVersion.current === version && restorationResolved) setIsRestoring(false);
+        if (mounted && requestVersion.current === version && restorationResolved) {
+          initialBootstrapComplete.current = true;
+          setIsRestoring(false);
+        }
       }
     };
 
@@ -93,6 +104,8 @@ export const useSessionManager = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         requestVersion.current += 1;
+        initialBootstrapComplete.current = true;
+        identityUserId.current = null;
         clearUserSession();
         setRestoreError(null);
         setIsRestoring(false);
@@ -100,9 +113,16 @@ export const useSessionManager = () => {
       }
 
       if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
+        if (
+          event === 'TOKEN_REFRESHED'
+          && initialBootstrapComplete.current
+          && identityUserId.current === session.user.id
+        ) return;
+
         const version = ++requestVersion.current;
-        setIsRestoring(true);
+        if (!initialBootstrapComplete.current) setIsRestoring(true);
         // Defer database reads until Supabase has returned from its auth callback.
+        // Once startup is complete, keep the current page visible during this refresh.
         window.setTimeout(() => {
           if (mounted) void restoreIdentityFromAuthEvent(session.user, version);
         }, 0);
