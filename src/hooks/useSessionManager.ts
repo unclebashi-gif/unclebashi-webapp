@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, clearSupabaseLocalAuthStorage } from '@/lib/supabase';
 import { IdentityLoadError, loadIdentity } from '@/lib/identity';
 import { useAppStore } from '@/lib/store';
 
@@ -11,6 +11,38 @@ const getIdentityMessage = (error: unknown): string => {
     return 'Your account roles could not be verified. Please contact support.';
   }
   return 'We could not restore your account data. Please try again.';
+};
+
+const invalidSessionCodes = new Set([
+  'bad_jwt',
+  'invalid_jwt',
+  'invalid_token',
+  'invalid_grant',
+  'invalid_refresh_token',
+  'session_not_found',
+  'session_expired',
+  'token_expired',
+  'refresh_token_not_found',
+  'refresh_token_already_used',
+  'user_not_found',
+]);
+
+const isInvalidAuthSessionError = (error: unknown): boolean => {
+  if (typeof error !== 'object' || error === null) return false;
+  const candidate = error as { code?: unknown; name?: unknown; status?: unknown };
+  return candidate.name === 'AuthSessionMissingError'
+    || candidate.name === 'AuthInvalidTokenResponseError'
+    || candidate.status === 401
+    || (typeof candidate.code === 'string' && invalidSessionCodes.has(candidate.code));
+};
+
+type RestorableAuthSession = {
+  access_token: string;
+  user: {
+    id: string;
+    email?: string;
+    user_metadata?: Record<string, unknown>;
+  };
 };
 
 export const useSessionManager = () => {
@@ -47,16 +79,85 @@ export const useSessionManager = () => {
     }
   }, [clearUserSession, setAuthenticatedUser, setCurrentView]);
 
+  const clearInvalidSession = useCallback(async (version: number) => {
+    if (requestVersion.current !== version) return;
+
+    let needsStorageFallback = false;
+    try {
+      const { error } = await supabase.auth.signOut({ scope: 'local' });
+      needsStorageFallback = Boolean(error);
+    } catch {
+      needsStorageFallback = true;
+    }
+
+    // A newer sign-in/auth event wins. Never clear its storage or identity.
+    if (requestVersion.current !== version) return;
+
+    if (needsStorageFallback) {
+      try {
+        clearSupabaseLocalAuthStorage();
+      } catch {
+        // Still clear in-memory account state if browser storage is unavailable.
+      }
+    }
+
+    if (requestVersion.current !== version) return;
+    requestVersion.current += 1;
+    identityUserId.current = null;
+    clearUserSession();
+    setRestoreError(null);
+    initialBootstrapComplete.current = true;
+    setIsRestoring(false);
+  }, [clearUserSession]);
+
+  const validateAndRestoreIdentity = useCallback(async (
+    session: RestorableAuthSession,
+    version: number
+  ): Promise<boolean> => {
+    try {
+      const { data: { user: validatedUser }, error } =
+        await supabase.auth.getUser(session.access_token);
+
+      if (requestVersion.current !== version) return false;
+
+      if (error) {
+        if (isInvalidAuthSessionError(error)) {
+          await clearInvalidSession(version);
+        } else {
+          setRestoreError('We could not verify your session. Please check your connection and try again.');
+        }
+        return false;
+      }
+
+      if (!validatedUser || validatedUser.id !== session.user.id) {
+        await clearInvalidSession(version);
+        return false;
+      }
+
+      return await applyAuthoritativeIdentity(validatedUser, version);
+    } catch (error) {
+      if (requestVersion.current !== version) return false;
+
+      if (isInvalidAuthSessionError(error)) {
+        await clearInvalidSession(version);
+      } else {
+        // Network and service failures do not prove the session is invalid.
+        setRestoreError('We could not verify your session. Please check your connection and try again.');
+      }
+      return false;
+    }
+  }, [applyAuthoritativeIdentity, clearInvalidSession]);
+
   const restoreIdentityFromAuthEvent = useCallback(async (
-    authUser: { id: string; email?: string; user_metadata?: Record<string, unknown> },
+    session: RestorableAuthSession,
     version: number
   ) => {
-    const identityLoaded = await applyAuthoritativeIdentity(authUser, version);
+    const identityLoaded = await validateAndRestoreIdentity(session, version);
     if (identityLoaded && requestVersion.current === version) {
       initialBootstrapComplete.current = true;
       setIsRestoring(false);
     }
-  }, [applyAuthoritativeIdentity]);
+  }, [validateAndRestoreIdentity]);
 
   useEffect(() => {
     let mounted = true;
@@ -69,8 +170,10 @@ export const useSessionManager = () => {
         if (error) throw error;
         if (!mounted || requestVersion.current !== version) return;
 
-        if (session?.user) {
-          restorationResolved = await applyAuthoritativeIdentity(session.user, version);
+        if (session?.access_token && session.user) {
+          restorationResolved = await validateAndRestoreIdentity(session, version);
+        } else if (session) {
+          await clearInvalidSession(version);
         } else {
           identityUserId.current = null;
           clearUserSession();
@@ -79,12 +182,14 @@ export const useSessionManager = () => {
         }
       } catch (error) {
         if (mounted && requestVersion.current === version) {
-          // A failed getSession call does not prove the user is signed out.
-          setRestoreError(getIdentityMessage(error));
+          if (isInvalidAuthSessionError(error)) {
+            await clearInvalidSession(version);
+          } else {
+            // Auth service/network failures remain retryable, not signed-out.
+            setRestoreError('We could not verify your session. Please check your connection and try again.');
+          }
         }
       } finally {
-        // An auth event may have started a newer identity load while this
-        // request was pending. Only the latest request can resolve startup.
         if (mounted && requestVersion.current === version && restorationResolved) {
           initialBootstrapComplete.current = true;
           setIsRestoring(false);
@@ -97,7 +202,7 @@ export const useSessionManager = () => {
       mounted = false;
       requestVersion.current += 1;
     };
-  }, [applyAuthoritativeIdentity, clearUserSession]);
+  }, [clearInvalidSession, clearUserSession, validateAndRestoreIdentity]);
 
   useEffect(() => {
     let mounted = true;
@@ -121,10 +226,9 @@ export const useSessionManager = () => {
 
         const version = ++requestVersion.current;
         if (!initialBootstrapComplete.current) setIsRestoring(true);
-        // Defer database reads until Supabase has returned from its auth callback.
-        // Once startup is complete, keep the current page visible during this refresh.
+        // Defer Auth validation and account reads until Supabase returns from its callback.
         window.setTimeout(() => {
-          if (mounted) void restoreIdentityFromAuthEvent(session.user, version);
+          if (mounted) void restoreIdentityFromAuthEvent(session, version);
         }, 0);
       }
     });
