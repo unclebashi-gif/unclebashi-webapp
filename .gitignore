@@ -3,4 +3,11 @@
 /.env.*
 !/.env.example
 
+# Dependencies
+/node_modules/
+
+# Build output
+/dist/
+
+# Supabase local/temp files
 supabase/.temp/
