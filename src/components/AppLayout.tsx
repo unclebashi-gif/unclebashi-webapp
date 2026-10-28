@@ -1,11 +1,12 @@
 import React, { lazy, Suspense, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppStore } from '@/lib/store';
-import { getViewFromPath } from '@/lib/navigation';
+import { getViewFromPath, isPublicView } from '@/lib/navigation';
 import { useSessionManager } from '@/hooks/useSessionManager';
 import { Header } from './layout/Header';
 import { Footer } from './layout/Footer';
 import { AuthModal } from './auth/AuthModal';
+import NotFound from '@/pages/NotFound';
 
 const HomePage = lazy(() => import('./HomePage').then(({ HomePage }) => ({ default: HomePage })));
 const OnboardingFlow = lazy(() => import('./onboarding/OnboardingFlow').then(({ OnboardingFlow }) => ({ default: OnboardingFlow })));
@@ -15,6 +16,12 @@ const CoachingHub = lazy(() => import('./coaching/CoachingHub').then(({ Coaching
 const MatchmakingHub = lazy(() => import('./matchmaking/MatchmakingHub').then(({ MatchmakingHub }) => ({ default: MatchmakingHub })));
 const ProfilePage = lazy(() => import('./profile/ProfilePage').then(({ ProfilePage }) => ({ default: ProfilePage })));
 const AdminDashboard = lazy(() => import('./admin/AdminDashboard').then(({ AdminDashboard }) => ({ default: AdminDashboard })));
+const CounsellingPage = lazy(() => import('./public/CounsellingPage').then(({ CounsellingPage }) => ({ default: CounsellingPage })));
+const MediaPage = lazy(() => import('./public/MediaPage').then(({ MediaPage }) => ({ default: MediaPage })));
+const ContactPage = lazy(() => import('./public/ContactPage').then(({ ContactPage }) => ({ default: ContactPage })));
+const AboutPage = lazy(() => import('./public/AboutPage').then(({ AboutPage }) => ({ default: AboutPage })));
+const PrivacyPage = lazy(() => import('./public/PrivacyPage').then(({ PrivacyPage }) => ({ default: PrivacyPage })));
+const TermsPage = lazy(() => import('./public/TermsPage').then(({ TermsPage }) => ({ default: TermsPage })));
 
 const AppLayout: React.FC = () => {
   const location = useLocation();
@@ -26,21 +33,18 @@ const AppLayout: React.FC = () => {
   const { isRestoring, restoreError } = useSessionManager();
 
   useEffect(() => {
-    if (isRestoring) return;
-    syncCurrentView(currentView);
-  }, [currentView, isRestoring, syncCurrentView]);
+    if (isRestoring || !routeView) return;
+    syncCurrentView(routeView);
+  }, [isRestoring, routeView, syncCurrentView]);
 
   useEffect(() => {
     if (isRestoring) return;
-    if (!routeView) {
+    if (!routeView) return;
+    if (!isAuthenticated && !isPublicView(routeView)) {
       navigate('/', { replace: true });
       return;
     }
-    if (!isAuthenticated && routeView !== 'home') {
-      navigate('/', { replace: true });
-      return;
-    }
-    if (isAuthenticated && user && !user.onboardingCompleted && routeView !== 'onboarding') {
+    if (isAuthenticated && user && !user.onboardingCompleted && routeView !== 'onboarding' && !isPublicView(routeView)) {
       navigate('/onboarding', { replace: true });
       return;
     }
@@ -94,6 +98,9 @@ const AppLayout: React.FC = () => {
     );
   }
 
+  // Unknown application paths show a 404 without changing the URL.
+  if (!routeView) return <NotFound />;
+
   // Render onboarding flow without header/footer
   if (currentView === 'onboarding' && isAuthenticated && !user?.onboardingCompleted) {
     return (
@@ -105,7 +112,7 @@ const AppLayout: React.FC = () => {
 
   const renderContent = () => {
     // If not authenticated, show home page for most views
-    if (!isAuthenticated && currentView !== 'home') {
+    if (!isAuthenticated && !isPublicView(currentView)) {
       return <HomePage />;
     }
 
@@ -118,6 +125,18 @@ const AppLayout: React.FC = () => {
         return <CommunityHub />;
       case 'coaching':
         return <CoachingHub />;
+      case 'counselling':
+        return <CounsellingPage />;
+      case 'media':
+        return <MediaPage />;
+      case 'contact':
+        return <ContactPage />;
+      case 'about':
+        return <AboutPage />;
+      case 'privacy':
+        return <PrivacyPage />;
+      case 'terms':
+        return <TermsPage />;
       case 'matchmaking':
         return <MatchmakingHub />;
       case 'profile':
@@ -146,7 +165,7 @@ const AppLayout: React.FC = () => {
         </Suspense>
       </main>
 
-      {currentView === 'home' && <Footer />}
+      {routeView && isPublicView(routeView) && <Footer />}
 
       <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
     </div>

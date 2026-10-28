@@ -29,7 +29,7 @@ export const CoachesSection: React.FC = () => {
     { icon: AwardIcon, title: 'Expert Insight', description: 'Learn from qualified coaches and their experience' },
   ];
 
-  return <section className="py-20 bg-[#faf6f1]"><div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"><div className="grid lg:grid-cols-2 gap-12 items-center">
+  return <section id="coaches" className="py-20 bg-[#faf6f1]"><div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"><div className="grid lg:grid-cols-2 gap-12 items-center">
     <div><h2 className="text-3xl sm:text-4xl font-bold text-[#1e3a5f] mb-4">Guided by Experts Who Care</h2>
       <p className="text-lg text-gray-600 mb-8">Our coaches provide marriage preparation, relationship guidance, and support across East Africa and the Diaspora.</p>
       <div className="space-y-4 mb-8">{benefits.map((benefit) => { const Icon=benefit.icon; return <div key={benefit.title} className="flex items-start space-x-4"><div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm"><Icon size={20} className="text-[#c4785a]"/></div><div><h4 className="font-semibold text-[#1e3a5f]">{benefit.title}</h4><p className="text-sm text-gray-600">{benefit.description}</p></div></div>; })}</div>

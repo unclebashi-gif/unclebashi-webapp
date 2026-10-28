@@ -1,4 +1,40 @@
-export type AppView = 'home' | 'education' | 'community' | 'coaching' | 'matchmaking' | 'admin' | 'profile' | 'settings' | 'onboarding';
+export type AppView =
+  | 'home'
+  | 'education'
+  | 'community'
+  | 'coaching'
+  | 'matchmaking'
+  | 'counselling'
+  | 'media'
+  | 'contact'
+  | 'about'
+  | 'privacy'
+  | 'terms'
+  | 'admin'
+  | 'profile'
+  | 'settings'
+  | 'onboarding';
+
+export type PrimaryNavigationItem = {
+  view: AppView;
+  label: string;
+  requiresAuth: boolean;
+};
+
+export const PRIMARY_NAVIGATION: readonly PrimaryNavigationItem[] = [
+  { view: 'home', label: 'Home', requiresAuth: false },
+  { view: 'education', label: 'Courses', requiresAuth: true },
+  { view: 'matchmaking', label: 'Marriage Matching', requiresAuth: true },
+  { view: 'coaching', label: 'Coaching', requiresAuth: true },
+  { view: 'counselling', label: 'Counselling', requiresAuth: false },
+  { view: 'media', label: 'Media', requiresAuth: false },
+  { view: 'community', label: 'Community', requiresAuth: true },
+  { view: 'contact', label: 'Contact', requiresAuth: false },
+];
+
+export const PUBLIC_VIEWS: readonly AppView[] = ['home', 'about', 'counselling', 'media', 'contact', 'privacy', 'terms'];
+
+export const isPublicView = (view: AppView): boolean => PUBLIC_VIEWS.includes(view);
 
 const viewPaths: Record<AppView, string> = {
   home: '/',
@@ -6,6 +42,12 @@ const viewPaths: Record<AppView, string> = {
   community: '/community',
   coaching: '/coaching',
   matchmaking: '/matching',
+  counselling: '/counselling',
+  media: '/media',
+  contact: '/contact',
+  about: '/about',
+  privacy: '/privacy',
+  terms: '/terms',
   admin: '/admin',
   profile: '/profile',
   settings: '/settings',
@@ -19,6 +61,12 @@ const pathViews: Record<string, AppView> = {
   '/community': 'community',
   '/coaching': 'coaching',
   '/matching': 'matchmaking',
+  '/counselling': 'counselling',
+  '/media': 'media',
+  '/contact': 'contact',
+  '/about': 'about',
+  '/privacy': 'privacy',
+  '/terms': 'terms',
   '/admin': 'admin',
   '/profile': 'profile',
   '/settings': 'settings',

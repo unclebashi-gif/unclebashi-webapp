@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAppStore } from '@/lib/store';
-import { getViewFromPath } from '@/lib/navigation';
+import { getViewFromPath, PRIMARY_NAVIGATION, type AppView } from '@/lib/navigation';
 import { supabase } from '@/lib/supabase';
 import { Button } from '../ui/button';
 import {
@@ -16,6 +16,24 @@ import {
   SettingsIcon,
   SparklesIcon,
 } from '../ui/Icons';
+
+const navIcons: Record<AppView, React.ComponentType<{ size?: number; className?: string }>> = {
+  home: HomeIcon,
+  education: BookIcon,
+  community: UsersIcon,
+  coaching: SparklesIcon,
+  matchmaking: HeartIcon,
+  counselling: SparklesIcon,
+  media: BookIcon,
+  contact: UsersIcon,
+  about: UsersIcon,
+  privacy: SettingsIcon,
+  terms: BookIcon,
+  admin: SettingsIcon,
+  profile: UserIcon,
+  settings: SettingsIcon,
+  onboarding: HomeIcon,
+};
 
 export const Header: React.FC = () => {
   const location = useLocation();
@@ -32,13 +50,7 @@ export const Header: React.FC = () => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [logoutError, setLogoutError] = useState('');
 
-  const navItems = [
-    { id: 'home', label: 'Home', icon: HomeIcon },
-    { id: 'education', label: 'Courses', icon: BookIcon },
-    { id: 'community', label: 'Community', icon: UsersIcon },
-    { id: 'coaching', label: 'Coaching', icon: SparklesIcon },
-    { id: 'matchmaking', label: 'Matching', icon: HeartIcon },
-  ];
+  const navItems = PRIMARY_NAVIGATION;
 
   const handleNavClick = (viewId: string) => {
     setCurrentView(viewId);
@@ -88,18 +100,18 @@ export const Header: React.FC = () => {
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center space-x-1">
             {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = currentView === item.id;
-              const isLocked = !isAuthenticated && item.id !== 'home';
+              const Icon = navIcons[item.view];
+              const isActive = currentView === item.view;
+              const isLocked = !isAuthenticated && item.requiresAuth;
 
               return (
                 <button
-                  key={item.id}
+                  key={item.view}
                   onClick={() => {
                     if (isLocked) {
                       handleSignIn();
                     } else {
-                      handleNavClick(item.id);
+                      handleNavClick(item.view);
                     }
                   }}
                   className={`flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -221,19 +233,19 @@ export const Header: React.FC = () => {
         <div className="md:hidden border-t border-gray-100 bg-white">
           <div className="px-4 py-3 space-y-1">
             {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = currentView === item.id;
-              const isLocked = !isAuthenticated && item.id !== 'home';
+              const Icon = navIcons[item.view];
+              const isActive = currentView === item.view;
+              const isLocked = !isAuthenticated && item.requiresAuth;
 
               return (
                 <button
-                  key={item.id}
+                  key={item.view}
                   onClick={() => {
                     if (isLocked) {
                       handleSignIn();
                       setMobileMenuOpen(false);
                     } else {
-                      handleNavClick(item.id);
+                      handleNavClick(item.view);
                     }
                   }}
                   className={`w-full flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
