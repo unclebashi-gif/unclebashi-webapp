@@ -7,6 +7,7 @@ import { Header } from './layout/Header';
 import { Footer } from './layout/Footer';
 import { AuthModal } from './auth/AuthModal';
 import NotFound from '@/pages/NotFound';
+import { JourneyRouteGate } from '@/components/dashboard/JourneyRouteGate';
 
 const HomePage = lazy(() => import('./HomePage').then(({ HomePage }) => ({ default: HomePage })));
 const OnboardingFlow = lazy(() => import('./onboarding/OnboardingFlow').then(({ OnboardingFlow }) => ({ default: OnboardingFlow })));
@@ -124,7 +125,7 @@ const AppLayout: React.FC = () => {
       case 'community':
         return <CommunityHub />;
       case 'coaching':
-        return <CoachingHub />;
+        return <JourneyRouteGate type="coaching"><CoachingHub /></JourneyRouteGate>;
       case 'counselling':
         return <CounsellingPage />;
       case 'media':
@@ -138,7 +139,7 @@ const AppLayout: React.FC = () => {
       case 'terms':
         return <TermsPage />;
       case 'matchmaking':
-        return <MatchmakingHub />;
+        return <JourneyRouteGate type="matchmaking"><MatchmakingHub /></JourneyRouteGate>;
       case 'profile':
         return <ProfilePage />;
       case 'admin':

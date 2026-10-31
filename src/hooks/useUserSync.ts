@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/lib/store';
+import type { JourneyType, UserJourney } from '@/types/journey';
 
 export interface OnboardingCompletionInput {
   onboardingData: Record<string, unknown>;
@@ -26,6 +27,41 @@ export interface OnboardingCompletionResult {
   commitmentLevel: string | null;
   valuesAssessment: string[];
   gender: string | null;
+}
+
+export interface CoreOnboardingCompletionInput {
+  onboardingData: Record<string, unknown>;
+  displayName: string;
+  dateOfBirth: string;
+  gender: 'male' | 'female';
+  nationalityCountryCode: string;
+  countryOfOriginCode: string;
+  countryCode: string;
+  city: string;
+  primaryLanguage: string;
+  otherLanguages: string[];
+  legalMaritalStatus: string;
+  relationshipSituation: string;
+  primaryReasonForJoining: JourneyType;
+}
+
+export interface CoreOnboardingCompletionResult {
+  userId: string;
+  onboardingCompleted: true;
+  onboardingStep: 10;
+  displayName: string;
+  dateOfBirth: string;
+  gender: 'male' | 'female';
+  nationalityCountryCode: string;
+  countryOfOriginCode: string;
+  countryCode: string;
+  city: string;
+  primaryLanguage: string;
+  otherLanguages: string[];
+  legalMaritalStatus: string;
+  relationshipSituation: string;
+  primaryReasonForJoining: JourneyType;
+  journey: UserJourney;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -125,7 +161,79 @@ export const useUserSync = () => {
     } satisfies OnboardingCompletionResult;
   }, [user?.id]);
 
-  return { syncOnboardingData, syncProfileFields, completeOnboarding };
+  const completeCoreOnboardingV2 = useCallback(async (
+    input: CoreOnboardingCompletionInput
+  ): Promise<CoreOnboardingCompletionResult> => {
+    if (!user?.id) throw new Error('Cannot complete onboarding without an authenticated user.');
+    const { data, error } = await supabase.rpc('complete_core_onboarding_v2', {
+      p_onboarding_data: input.onboardingData,
+      p_display_name: input.displayName,
+      p_date_of_birth: input.dateOfBirth,
+      p_gender: input.gender,
+      p_nationality_country_code: input.nationalityCountryCode,
+      p_country_of_origin_code: input.countryOfOriginCode,
+      p_country_code: input.countryCode,
+      p_city: input.city,
+      p_primary_language: input.primaryLanguage,
+      p_other_languages: input.otherLanguages,
+      p_legal_marital_status: input.legalMaritalStatus,
+      p_relationship_situation: input.relationshipSituation,
+      p_primary_reason_for_joining: input.primaryReasonForJoining,
+    });
+    if (error) throw new Error(`Could not complete setup: ${error.message}`);
+    if (!Array.isArray(data) || data.length !== 1 || !isRecord(data[0])) {
+      throw new Error('Setup completion was not confirmed by the server.');
+    }
+
+    const row = data[0];
+    if (
+      row.id !== user.id || row.onboarding_completed !== true || row.onboarding_step !== 10 ||
+      typeof row.display_name !== 'string' || typeof row.date_of_birth !== 'string' ||
+      (row.gender !== 'male' && row.gender !== 'female') ||
+      typeof row.nationality_country_code !== 'string' ||
+      typeof row.country_of_origin_code !== 'string' || typeof row.country_code !== 'string' ||
+      typeof row.city !== 'string' || typeof row.primary_language !== 'string' ||
+      !Array.isArray(row.other_languages) ||
+      typeof row.legal_marital_status !== 'string' ||
+      typeof row.relationship_situation !== 'string' ||
+      typeof row.primary_reason_for_joining !== 'string' ||
+      typeof row.journey_type !== 'string' || row.journey_status !== 'active' || row.journey_is_primary !== true
+    ) {
+      throw new Error('The server returned incomplete setup completion data.');
+    }
+
+    const journey: UserJourney = {
+      user_id: row.id,
+      journey_type: row.journey_type as JourneyType,
+      status: 'active',
+      is_primary: true,
+      started_at: String(row.journey_started_at),
+      completed_at: null,
+      withdrawn_at: null,
+      created_at: String(row.journey_created_at),
+      updated_at: String(row.journey_updated_at),
+    };
+    return {
+      userId: row.id,
+      onboardingCompleted: true,
+      onboardingStep: 10,
+      displayName: row.display_name,
+      dateOfBirth: row.date_of_birth,
+      gender: row.gender,
+      nationalityCountryCode: row.nationality_country_code,
+      countryOfOriginCode: row.country_of_origin_code,
+      countryCode: row.country_code,
+      city: row.city,
+      primaryLanguage: row.primary_language,
+      otherLanguages: row.other_languages.filter((value): value is string => typeof value === 'string'),
+      legalMaritalStatus: row.legal_marital_status,
+      relationshipSituation: row.relationship_situation,
+      primaryReasonForJoining: row.primary_reason_for_joining as JourneyType,
+      journey,
+    };
+  }, [user?.id]);
+
+  return { syncOnboardingData, syncProfileFields, completeOnboarding, completeCoreOnboardingV2 };
 };
 
 export default useUserSync;

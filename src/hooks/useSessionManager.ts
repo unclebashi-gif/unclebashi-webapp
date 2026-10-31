@@ -63,7 +63,7 @@ export const useSessionManager = () => {
       const identity = await loadIdentity(authUser);
       if (requestVersion.current !== version) return false;
 
-      setAuthenticatedUser(identity.user, identity.onboardingData);
+      setAuthenticatedUser(identity.user, identity.onboardingData, identity.journeys);
       identityUserId.current = identity.user.id;
       setRestoreError(null);
       if (!identity.user.onboardingCompleted) {

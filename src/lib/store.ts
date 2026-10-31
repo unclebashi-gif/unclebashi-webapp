@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { navigateToView } from './navigation';
+import type { UserJourney } from '@/types/journey';
 
 
 // Types
@@ -20,6 +21,18 @@ export interface User {
   readinessScore: number;
   matchmakingUnlocked: boolean;
   roles: UserRole[];
+  displayName?: string;
+  dateOfBirth?: string;
+  nationalityCountryCode?: string;
+  countryOfOriginCode?: string;
+  countryCode?: string;
+  city?: string;
+  primaryLanguage?: string;
+  otherLanguages: string[];
+  legalMaritalStatus?: string;
+  relationshipSituation?: string;
+  primaryReasonForJoining?: string;
+  accountStatus: 'active' | 'deactivated' | 'deletion_pending';
 }
 
 export interface JournalEntry {
@@ -36,7 +49,7 @@ interface AppState {
   // Auth & User
   isAuthenticated: boolean;
   user: User | null;
-  setAuthenticatedUser: (user: User, onboardingData: Record<string, unknown>) => void;
+  setAuthenticatedUser: (user: User, onboardingData: Record<string, unknown>, journeys?: UserJourney[]) => void;
   updateUser: (updates: Partial<User>) => void;
   clearUserSession: (options?: { navigateHome?: boolean }) => void;
 
@@ -49,6 +62,9 @@ interface AppState {
 
   // Onboarding
   onboardingData: Record<string, unknown>;
+  journeys: UserJourney[];
+  setJourneys: (journeys: UserJourney[]) => void;
+  upsertJourney: (journey: UserJourney) => void;
   setOnboardingData: (data: Record<string, unknown>) => void;
   updateOnboardingData: (updates: Record<string, unknown>) => void;
 
@@ -69,8 +85,8 @@ export const useAppStore = create<AppState>()(
       // Auth & User
       isAuthenticated: false,
       user: null,
-      setAuthenticatedUser: (user, onboardingData) =>
-        set({ user, isAuthenticated: true, onboardingData }),
+      setAuthenticatedUser: (user, onboardingData, journeys = []) =>
+        set({ user, isAuthenticated: true, onboardingData, journeys }),
       updateUser: (updates) =>
         set((state) => ({
           user: state.user ? { ...state.user, ...updates } : null,
@@ -80,6 +96,7 @@ export const useAppStore = create<AppState>()(
           isAuthenticated: false,
           user: null,
           onboardingData: {},
+          journeys: [],
           educationResumeTarget: null,
           journalEntries: [],
           currentView: 'home',
@@ -100,6 +117,14 @@ export const useAppStore = create<AppState>()(
 
       // Onboarding
       onboardingData: {},
+      journeys: [],
+      setJourneys: (journeys) => set({ journeys }),
+      upsertJourney: (journey) => set((state) => ({
+        journeys: [
+          ...state.journeys.filter((item) => item.journey_type !== journey.journey_type),
+          journey,
+        ].sort((a, b) => a.created_at.localeCompare(b.created_at)),
+      })),
       setOnboardingData: (data) => set({ onboardingData: data }),
       updateOnboardingData: (updates) =>
         set((state) => ({

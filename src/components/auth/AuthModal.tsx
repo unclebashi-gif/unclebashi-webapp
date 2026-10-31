@@ -73,7 +73,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
         if (authData.session) {
           const identity = await loadIdentity(authData.user);
-          setAuthenticatedUser(identity.user, identity.onboardingData);
+          setAuthenticatedUser(identity.user, identity.onboardingData, identity.journeys);
           onClose();
           setCurrentView(identity.user.onboardingCompleted ? 'education' : 'onboarding');
         } else {
@@ -89,7 +89,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         if (!authData.user) throw new Error('Supabase did not return the signed-in account.');
 
         const identity = await loadIdentity(authData.user);
-        setAuthenticatedUser(identity.user, identity.onboardingData);
+        setAuthenticatedUser(identity.user, identity.onboardingData, identity.journeys);
         onClose();
         setCurrentView(identity.user.onboardingCompleted ? 'education' : 'onboarding');
       }

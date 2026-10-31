@@ -7,6 +7,7 @@ import { TestimonialsSection } from './home/TestimonialsSection';
 import { CoachesSection } from './home/CoachesSection';
 import { CTASection } from './home/CTASection';
 import { ContinueWatching } from './dashboard/ContinueWatching';
+import { MyJourneys } from './dashboard/MyJourneys';
 
 export const HomePage: React.FC = () => {
   const { isAuthenticated } = useAppStore();
@@ -17,6 +18,7 @@ export const HomePage: React.FC = () => {
       {isAuthenticated && (
         <div className="bg-[#faf6f1] py-8">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <MyJourneys />
             <ContinueWatching />
           </div>
         </div>
