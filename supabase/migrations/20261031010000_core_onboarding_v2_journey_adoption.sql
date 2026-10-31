@@ -57,6 +57,12 @@ where profile.onboarding_completed is true
   and profile.marriage_intention in (
     'seeking_marriage', 'preparing_for_marriage', 'strengthening_marriage'
   )
+  and not exists (
+    select 1
+    from public.user_roles as role_row
+    where role_row.user_id = profile.id
+      and role_row.role = 'admin'
+  )
 on conflict (user_id, journey_type) do nothing;
 
 update public.users as profile
@@ -69,6 +75,12 @@ where profile.onboarding_completed is true
   and profile.primary_reason_for_joining is null
   and profile.marriage_intention in (
     'seeking_marriage', 'preparing_for_marriage', 'strengthening_marriage'
+  )
+  and not exists (
+    select 1
+    from public.user_roles as role_row
+    where role_row.user_id = profile.id
+      and role_row.role = 'admin'
   );
 
 create or replace function public.activate_user_journey(
