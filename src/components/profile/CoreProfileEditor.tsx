@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/lib/store';
 import { saveCoreProfile, type CoreProfileDraft } from '@/lib/coreProfileService';
+import { getMyJourneys } from '@/lib/journeyService';
 import { MATCHMAKING_COUNTRIES } from '@/types/matchmaking';
 
 const emptyProfile: CoreProfileDraft = {
@@ -23,6 +24,7 @@ const relationshipStatuses = [
 export const CoreProfileEditor: React.FC = () => {
   const user = useAppStore((state) => state.user);
   const updateUser = useAppStore((state) => state.updateUser);
+  const setJourneys = useAppStore((state) => state.setJourneys);
   const [draft, setDraft] = useState<CoreProfileDraft>(emptyProfile);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
@@ -58,7 +60,6 @@ export const CoreProfileEditor: React.FC = () => {
       const saved = await saveCoreProfile(draft);
       updateUser({
         displayName: saved.display_name,
-        fullName: saved.display_name,
         nationalityCountryCode: saved.nationality_country_code,
         countryOfOriginCode: saved.country_of_origin_code,
         countryCode: saved.country_code,
@@ -70,6 +71,11 @@ export const CoreProfileEditor: React.FC = () => {
       });
       setDraft(saved);
       setNotice('Core profile saved.');
+      try {
+        setJourneys(await getMyJourneys());
+      } catch {
+        setError('Core profile saved, but your journeys could not be refreshed. Please reload this page.');
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not save your core profile.');
     } finally {
