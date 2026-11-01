@@ -10,8 +10,7 @@ begin
      or pg_catalog.to_regclass('public.matchmaking_blocks') is null then
     raise exception 'Required Core Profile, journey, or Matchmaking tables are missing.';
   end if;
-  if pg_catalog.to_regprocedure('public.matchmaking_profile_user_projection(public.matchmaking_profiles)') is null
-     or pg_catalog.to_regprocedure('public.is_community_user_suspended(uuid)') is null
+  if pg_catalog.to_regprocedure('public.is_community_user_suspended(uuid)') is null
      or pg_catalog.to_regprocedure('public.assert_matchmaking_opposite_gender(uuid)') is null
      or pg_catalog.to_regprocedure('public.has_community_role(text)') is null
      or pg_catalog.to_regprocedure('public.recompute_matchmaking_completion(uuid)') is null
@@ -819,8 +818,15 @@ begin
   if pg_catalog.has_function_privilege('authenticated','public._matchmaking_v2_actor()','EXECUTE')
      or pg_catalog.has_function_privilege('authenticated','public._matchmaking_v2_preference_response_complete(text,text[])','EXECUTE')
      or pg_catalog.has_function_privilege('authenticated','public.recompute_matchmaking_completion(uuid)','EXECUTE')
-     or pg_catalog.has_function_privilege('authenticated','public.is_matchmaking_eligible(uuid)','EXECUTE') then
+     or pg_catalog.has_function_privilege('authenticated','public.is_matchmaking_eligible(uuid)','EXECUTE')
+     or pg_catalog.has_function_privilege('authenticated','public.matchmaking_profile_user_projection(public.matchmaking_profiles)','EXECUTE') then
     raise exception 'Postcondition failed: internal Matchmaking v2 helpers must remain private.';
+  end if;
+  if pg_catalog.to_regprocedure('public.matchmaking_profile_user_projection(public.matchmaking_profiles)') is null then
+    raise exception 'Postcondition failed: Matchmaking profile projection helper is missing.';
+  end if;
+  if pg_catalog.has_function_privilege('anon','public.matchmaking_profile_user_projection(public.matchmaking_profiles)','EXECUTE') then
+    raise exception 'Postcondition failed: anonymous role can execute the Matchmaking profile projection helper.';
   end if;
   if not pg_catalog.has_function_privilege('authenticated','public.get_my_matchmaking_setup()','EXECUTE')
      or not pg_catalog.has_function_privilege('authenticated','public.save_matchmaking_profile(jsonb)','EXECUTE')
