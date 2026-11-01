@@ -163,6 +163,7 @@ export interface MatchmakingSetup {
 }
 export interface MatchmakingDiscoveryProfile {
   profile_identifier: string;
+  public_first_name: string | null;
   age: number;
   gender: string;
   nationality_country_code: string | null;
@@ -186,6 +187,7 @@ export interface MatchmakingDiscoveryProfile {
 }
 export interface MatchmakingDetailProfile {
   profile_identifier: string;
+  public_first_name: string | null;
   age: number;
   gender: string;
   country_code: string;
@@ -222,7 +224,7 @@ export interface MatchmakingInterest {
   other_profile_identifier: string;
   direction: 'incoming' | 'outgoing';
   status: MatchmakingInterestStatus;
-  display_name: string;
+  public_first_name: string | null;
   age: number | null;
   country_code: string | null;
   city: string | null;
@@ -277,6 +279,10 @@ export interface MatchmakingAdminProfileDetail {
   faith_expectations: string | null;
   cultural_or_ethnic_community: string | null;
   clan_or_region: string | null;
+  show_religion: boolean;
+  show_cultural_community: boolean;
+  show_clan_or_region: boolean;
+  previous_approved_snapshot: Record<string, unknown> | null;
 }
 export interface MatchmakingAdminReviewHistory {
   user_id: string;

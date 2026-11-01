@@ -43,11 +43,14 @@ const detailSections: Array<{ title: string; fields: Array<[string, DetailField]
     ['Provider model', 'provider_model'], ['Family / in-law expectations', 'family_in_law_expectations'],
   ] },
   { title: 'Faith (only when displayed to members)', fields: [
+    ['Faith visible to members', 'show_religion'],
     ['Religion / faith', 'religion_or_faith'], ['Faith practice', 'faith_practice_level'],
     ['Denomination / tradition', 'denomination_or_tradition'], ['Faith expectations', 'faith_expectations'],
   ] },
   { title: 'Culture and region (only when displayed to members)', fields: [
+    ['Cultural community visible to members', 'show_cultural_community'],
     ['Cultural / ethnic community', 'cultural_or_ethnic_community'], ['Clan / region', 'clan_or_region'],
+    ['Clan / region visible to members', 'show_clan_or_region'],
   ] },
 ];
 
@@ -168,11 +171,26 @@ export const AdminMatchmakingPanel: React.FC = () => {
       <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
         <DialogHeader><DialogTitle>Matchmaking profile review</DialogTitle><DialogDescription>Review the member-visible profile content before taking action. Private partner preferences and financial readiness are excluded.</DialogDescription></DialogHeader>
         {detailLoading ? <p className="py-6 text-gray-500">Loading review profile…</p> : detail ? <>
+          <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">Safety review: Reject or return profiles that contain phone numbers, email addresses, social-media handles, external contact links, or invitations to communicate outside Uncle Bashi.</p>
+          {!detail.previous_approved_snapshot && <p className="text-sm font-medium text-gray-600">First review</p>}
           <div className="space-y-5">{detailSections.map(section => <section key={section.title} className="border-b pb-4 last:border-b-0">
             <h3 className="font-semibold text-[#1e3a5f]">{section.title}</h3>
             <dl className="mt-3 grid gap-3 sm:grid-cols-2">{section.fields.map(([label, key]) => <div key={key} className={['introduction', 'marriage_vision_response', 'physical_self_description', 'family_background', 'faith_expectations'].includes(key) ? 'sm:col-span-2' : ''}>
-              <dt className="text-xs uppercase tracking-wide text-gray-500">{label}</dt>
-              <dd className="mt-1 whitespace-pre-wrap text-sm text-gray-900">{valueOrFallback(detail[key], key === 'religion_or_faith' || key === 'faith_practice_level' || key === 'denomination_or_tradition' || key === 'faith_expectations' || key === 'cultural_or_ethnic_community' || key === 'clan_or_region' ? 'Not provided or not displayed to members' : 'Not provided')}</dd>
+              {(() => {
+                const previous = detail.previous_approved_snapshot;
+                const currentValue = detail[key];
+                const changed = previous !== null && Object.prototype.hasOwnProperty.call(previous, key)
+                  && JSON.stringify(previous[key]) !== JSON.stringify(currentValue);
+                const privateFallback = key === 'religion_or_faith' || key === 'faith_practice_level' || key === 'denomination_or_tradition' || key === 'faith_expectations' || key === 'cultural_or_ethnic_community' || key === 'clan_or_region'
+                  ? 'Not provided or not displayed to members' : 'Not provided';
+                return <>
+                  <dt className="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-500">{label}{changed && <span className="rounded-full bg-amber-100 px-2 py-0.5 normal-case text-amber-900">Changed</span>}</dt>
+                  <dd className={`mt-1 whitespace-pre-wrap text-sm text-gray-900 ${changed ? 'rounded-md border border-amber-200 bg-amber-50 p-2' : ''}`}>
+                    {changed && <><span className="block text-gray-600">Previous: {valueOrFallback(previous?.[key], privateFallback)}</span><span className="block">Current: {valueOrFallback(currentValue, privateFallback)}</span></>}
+                    {!changed && valueOrFallback(currentValue, privateFallback)}
+                  </dd>
+                </>;
+              })()}
             </div>)}</dl>
           </section>)}</div>
           <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
