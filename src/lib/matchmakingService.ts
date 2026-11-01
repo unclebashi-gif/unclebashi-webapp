@@ -80,12 +80,7 @@ function normalizeProfilePayload(profile: Partial<MatchmakingProfile>): Partial<
   return payload as Partial<MatchmakingProfile>;
 }
 function normalizePreferencesPayload(preferences: Partial<MatchmakingPreferences>): Partial<MatchmakingPreferences> {
-  const payload = pickFields(preferences, preferenceFields) as Record<string, unknown>;
-  if (Array.isArray(payload.preferred_residences)) {
-    payload.preferred_residences = (payload.preferred_residences as unknown[])
-      .filter(value => typeof value === 'string' && value.trim() !== '')
-      .map(value => normalizeCountryCode(value, 'Current residence preference'));
-  }
+  const payload = sanitizeMatchmakingPreferences(preferences) as Record<string, unknown>;
   for (const field of ['age_min', 'age_max']) {
     if (field in payload) payload[field] = normalizeOptionalInteger(payload[field], field);
   }
@@ -104,6 +99,59 @@ const preferenceFields = [
   'preferred_marital_statuses','marital_status_mode','preferred_children_statuses','children_mode',
   'preferred_wants_children','wants_children_mode','preferred_relocation','relocation_mode',
 ] as const;
+const preferenceValueSets: Partial<Record<typeof preferenceFields[number], ReadonlySet<string>>> = {
+  preferred_marital_statuses: new Set(['never_married', 'divorced', 'widowed', 'annulled']),
+  preferred_children_statuses: new Set(['has_children', 'no_children']),
+  preferred_wants_children: new Set(['yes', 'no', 'open_to_discussion']),
+  preferred_relocation: new Set(['yes', 'maybe', 'no']),
+};
+const preferenceModeFields = [
+  'residence_mode', 'religion_mode', 'marital_status_mode', 'children_mode', 'wants_children_mode', 'relocation_mode',
+] as const;
+const validPreferenceModes = new Set(['required', 'preferred', 'open']);
+
+export function sanitizeMatchmakingPreferences(
+  preferences: Partial<MatchmakingPreferences> | null | undefined,
+): Partial<MatchmakingPreferences> {
+  const sanitized = pickFields(preferences ?? {}, preferenceFields) as Record<string, unknown>;
+  for (const [field, allowed] of Object.entries(preferenceValueSets)) {
+    const value = sanitized[field];
+    if (Array.isArray(value)) sanitized[field] = value.filter(item => typeof item === 'string' && allowed?.has(item));
+    else if (field in sanitized) sanitized[field] = [];
+  }
+  if (Array.isArray(sanitized.preferred_residences)) {
+    sanitized.preferred_residences = (sanitized.preferred_residences as unknown[])
+      .flatMap(value => {
+        if (typeof value !== 'string' || !value.trim()) return [];
+        try {
+          const normalized = normalizeCountryCode(value, 'Current residence preference');
+          return normalized ? [normalized] : [];
+        } catch {
+          return [];
+        }
+      });
+  } else if ('preferred_residences' in sanitized) {
+    sanitized.preferred_residences = [];
+  }
+  if (Array.isArray(sanitized.preferred_religions)) {
+    sanitized.preferred_religions = (sanitized.preferred_religions as unknown[])
+      .filter((value): value is string => typeof value === 'string')
+      .map(value => value.trim())
+      .filter(Boolean);
+  } else if ('preferred_religions' in sanitized) {
+    sanitized.preferred_religions = [];
+  }
+  for (const field of preferenceModeFields) {
+    if (field in sanitized && !validPreferenceModes.has(String(sanitized[field]))) sanitized[field] = 'open';
+  }
+  if (import.meta.env.DEV && Array.isArray(sanitized.preferred_wants_children)
+      && (sanitized.preferred_wants_children as unknown[]).some(value =>
+        typeof value !== 'string' || !preferenceValueSets.preferred_wants_children?.has(value))) {
+    throw new Error('Matchmaking preference normalization failed its development check.');
+  }
+  return sanitized as Partial<MatchmakingPreferences>;
+}
+
 function pickFields<T extends object>(value: T, fields: readonly string[]): Partial<T> {
   return Object.fromEntries(fields.filter(key => key in value).map(key => [key, (value as Record<string, unknown>)[key]])) as Partial<T>;
 }

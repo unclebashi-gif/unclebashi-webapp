@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/lib/store';
 import {
   blockMatchmakingProfile, getMatchmakingDiscovery, getMatchmakingProfile, getMyMatchmakingInterests,
-  getMyMatchmakingSetup, reportMatchmakingProfile, respondMatchmakingInterest, saveMatchmakingPreferences,
+  getMyMatchmakingSetup, reportMatchmakingProfile, respondMatchmakingInterest, sanitizeMatchmakingPreferences, saveMatchmakingPreferences,
   saveMatchmakingProfile, sendMatchmakingInterest, submitMatchmakingProfile, withdrawMatchmakingInterest,
 } from '@/lib/matchmakingService';
 import { MATCHMAKING_COUNTRIES } from '@/types/matchmaking';
@@ -69,6 +69,14 @@ export const MatchmakingHub: React.FC = () => {
   const [notice, setNotice] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const isDirty = Boolean(baseline) && (JSON.stringify(profile) !== JSON.stringify(baseline?.profile) || JSON.stringify(preferences) !== JSON.stringify(baseline?.preferences));
+  const isApprovedUnchanged = profile.status === 'approved' && !isDirty;
+  const isApprovedWithEdits = profile.status === 'approved' && isDirty;
+  const canSubmitForReview = !busy && profile.status !== 'pending_review'
+    && profile.status !== 'approved' && profile.status !== 'hidden';
+  const submitButtonLabel = profile.status === 'pending_review' ? 'Submitted for review'
+    : isApprovedUnchanged ? 'Approved'
+      : isApprovedWithEdits ? 'Save edits before resubmitting'
+        : profile.status === 'hidden' ? 'Submission unavailable' : 'Submit for review';
 
   const loadSetup = useCallback(async () => {
     setLoading(true);
@@ -77,8 +85,9 @@ export const MatchmakingHub: React.FC = () => {
       const result = await getMyMatchmakingSetup();
       const nextProfile = { ...emptyProfile, ...(result.profile ?? {}) };
       const derivedGender: 'male' | 'female' | undefined = result.account?.gender === 'female' ? 'male' : result.account?.gender === 'male' ? 'female' : undefined;
-      const nextPreferences = { ...emptyPreferences, ...(result.preferences ?? {}), preferred_partner_gender: derivedGender };
-      setSetup(result);
+      const safePreferences = sanitizeMatchmakingPreferences(result.preferences);
+      const nextPreferences = { ...emptyPreferences, ...safePreferences, preferred_partner_gender: derivedGender };
+      setSetup({ ...result, preferences: safePreferences as MatchmakingPreferences | null });
       setProfile(nextProfile);
       setPreferences(nextPreferences);
       setBaseline({ profile: nextProfile, preferences: nextPreferences });
@@ -206,7 +215,7 @@ export const MatchmakingHub: React.FC = () => {
       return false;
     }
     const savedProfile = await saveMatchmakingProfile(profile);
-    const savedPreferences = await saveMatchmakingPreferences(preferences);
+    const savedPreferences = sanitizeMatchmakingPreferences(await saveMatchmakingPreferences(preferences));
     const nextProfile = { ...emptyProfile, ...savedProfile };
     const nextPreferences = { ...emptyPreferences, ...savedPreferences, preferred_partner_gender: setup?.account?.gender === 'female' ? 'male' : setup?.account?.gender === 'male' ? 'female' : undefined };
     setProfile(nextProfile);
@@ -227,6 +236,7 @@ export const MatchmakingHub: React.FC = () => {
   };
 
   const submit = async () => {
+    if (busy || profile.status === 'pending_review' || profile.status === 'approved' || profile.status === 'hidden') return;
     if (setup?.account?.gender !== 'female' && setup?.account?.gender !== 'male') {
       const message = 'Your base profile needs correction: add a valid gender in Core Profile before using Matchmaking.';
       setError(message); toast.error(message); return;
@@ -358,7 +368,7 @@ export const MatchmakingHub: React.FC = () => {
             {choicePreference('Should your future spouse be willing to relocate?','preferred_relocation','relocation_mode',preferences.preferred_relocation??[],yesNoMaybe,true)}
           </div>
         </section>
-        <div className="sticky bottom-3 z-10 bg-white/95 backdrop-blur rounded-xl border border-gray-200 p-4 shadow-lg flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold">Marriage Profile completion: {profile.completion_percentage ?? 0}%</p><p className="text-sm text-gray-500">{busy?'Saving…':isDirty?'Unsaved changes':baseline?'Saved':''}</p><p className="text-sm font-medium text-[#1e3a5f]" role="status">{requiredFieldsRemaining?`${requiredFieldsRemaining} required response${requiredFieldsRemaining===1?'':'s'} remaining`:'All required responses completed'}</p></div><div className="flex gap-3"><Button variant="outline" disabled={busy||!isDirty} onClick={()=>void saveDraft()}>{busy?'Saving…':'Save Draft'}</Button><Button disabled={busy||profile.status==='hidden'} onClick={()=>void submit()}>{profile.status==='pending_review'?'Submitted for review':'Submit for review'}</Button></div></div>
+        <div className="sticky bottom-3 z-10 bg-white/95 backdrop-blur rounded-xl border border-gray-200 p-4 shadow-lg flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold">Marriage Profile completion: {profile.completion_percentage ?? 0}%</p><p className="text-sm text-gray-500">{busy?'Saving…':isDirty?'Unsaved changes':baseline?'Saved':''}</p><p className="text-sm font-medium text-[#1e3a5f]" role="status">{requiredFieldsRemaining?`${requiredFieldsRemaining} required response${requiredFieldsRemaining===1?'':'s'} remaining`:'All required responses completed'}</p></div><div className="flex gap-3"><Button variant="outline" disabled={busy||!isDirty} onClick={()=>void saveDraft()}>{busy?'Saving…':'Save Draft'}</Button><Button disabled={!canSubmitForReview} onClick={()=>void submit()}>{submitButtonLabel}</Button></div></div>
       </>}
     </section>}
     {tab==='discover'&&<section>{loading?<div className="bg-white p-8 rounded-xl">Loading eligible profiles…</div>:discovery.length===0&&!error?<div className="bg-white rounded-2xl p-12 text-center"><h2 className="text-xl text-[#1e3a5f] font-semibold">Discovery is getting ready</h2><p className="text-gray-600 mt-2">Your v2 profile must be complete, approved, and mutually eligible before profiles appear.</p></div>:<><div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">{discovery.map(item=><article key={item.profile_identifier} className="bg-white rounded-xl shadow-sm overflow-hidden">{item.profile_image_url?<img src={item.profile_image_url} alt="" className="w-full h-48 object-cover"/>:<div className="h-48 bg-[#e9e2d8]"/>}<div className="p-5"><p className="text-sm text-gray-500">{item.age} · {item.city?`${item.city}, `:''}{countryLabel(item.country_code)}</p><h3 className="text-xl font-semibold text-[#1e3a5f]">Member profile</h3><p className="line-clamp-3 mt-2 text-gray-700">{item.introduction}</p><div className="flex flex-wrap gap-2 mt-4"><Button size="sm" onClick={async()=>{try{setSelected(await getMatchmakingProfile(item.profile_identifier));}catch(cause){setError(errorMessage(cause,'Profile unavailable.'));}}}>View profile</Button><Button size="sm" variant="outline" onClick={async()=>{try{await sendMatchmakingInterest(item.profile_identifier);setNotice('Interest sent.');toast.success('Interest sent.');await loadInterests();}catch(cause){const message=errorMessage(cause,'Could not send interest.');setError(message);toast.error(message);}}}>Interest</Button></div></div></article>)}</div>{hasMoreDiscovery&&<div className="text-center mt-6"><Button variant="outline" disabled={busy} onClick={async()=>{const last=discovery[discovery.length-1];if(!last)return;setBusy(true);try{const rows=await getMatchmakingDiscovery(20,{createdAt:last.created_at,profileIdentifier:last.profile_identifier});setDiscovery(current=>[...current,...rows]);setHasMoreDiscovery(rows.length===20);}catch(cause){setError(errorMessage(cause,'Could not load more profiles.'));}finally{setBusy(false);}}}>{busy?'Loading…':'Load more profiles'}</Button></div>}</>}</section>}
