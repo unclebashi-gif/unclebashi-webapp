@@ -12,6 +12,7 @@ import {
   HeartIcon,
   PenIcon,
 } from '../ui/Icons';
+import { CoreProfileEditor } from './CoreProfileEditor';
 
 
 
@@ -45,7 +46,7 @@ export const ProfilePage: React.FC = () => {
         location: editData.location,
         occupation: editData.occupation,
       });
-      updateUser({ fullName: editData.fullName });
+      updateUser({ fullName: editData.fullName, displayName: editData.fullName });
       setSaveSuccess(true);
       setIsEditing(false);
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -76,6 +77,8 @@ export const ProfilePage: React.FC = () => {
             {saveError}
           </div>
         )}
+
+        <CoreProfileEditor />
 
         {/* Profile Header */}
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden mb-6">
