@@ -31,11 +31,7 @@ export const saveCoreProfile = async (draft: CoreProfileDraft): Promise<CoreProf
 
   const { data, error } = await supabase
     .from('users')
-    .update({
-      ...values,
-      // Keep legacy display surfaces aligned until their projections use display_name.
-      full_name: values.display_name,
-    })
+    .update(values)
     .eq('id', authData.user.id)
     .select('display_name,nationality_country_code,country_of_origin_code,country_code,city,primary_language,other_languages,legal_marital_status,relationship_situation')
     .maybeSingle();
