@@ -879,8 +879,8 @@ begin
   end if;
   select pg_catalog.pg_get_functiondef('public.save_matchmaking_preferences(jsonb)'::pg_catalog.regprocedure)
     into v_preferences_definition;
-  if pg_catalog.position('preferred_education_levels=array[]::text[]' in v_preferences_definition) = 0
-     or pg_catalog.position('education_mode=''open''' in v_preferences_definition) = 0 then
+  if pg_catalog.strpos(v_preferences_definition, 'preferred_education_levels=array[]::text[]') = 0
+     or pg_catalog.strpos(v_preferences_definition, 'education_mode=''open''') = 0 then
     raise exception 'Postcondition failed: legacy education preference must be reset to Open with an empty selection.';
   end if;
 end;
