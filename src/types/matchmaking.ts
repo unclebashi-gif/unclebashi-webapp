@@ -39,23 +39,34 @@ export function matchmakingCountryCode(value: unknown): string {
 export interface MatchmakingProfile {
   id: string;
   user_id: string;
+  profile_version: number;
   nationality_country_code: string | null;
   country_of_origin_code: string | null;
   hometown: string | null;
   languages: string[];
   height_cm: number | null;
+  physical_self_description: string | null;
+  occupation: string | null;
+  financial_readiness: string | null;
   cultural_or_ethnic_community: string | null;
+  clan_or_region: string | null;
+  show_clan_or_region: boolean;
+  family_background: string | null;
+  family_involvement: string | null;
   show_cultural_community: boolean;
   use_cultural_community_for_matching: boolean;
   religion_or_faith: string | null;
   faith_practice_level: string | null;
+  faith_importance: string | null;
+  denomination_or_tradition: string | null;
+  faith_expectations: string | null;
   show_religion: boolean;
   use_religion_for_matching: boolean;
   education_level: string | null;
   field_of_study: string | null;
   employment_status: string | null;
   industry: string | null;
-  marital_status: 'never_married' | 'divorced' | 'widowed' | 'separated' | null;
+  marital_status: 'never_married' | 'divorced' | 'widowed' | 'separated' | 'annulled' | null;
   has_children: boolean | null;
   number_of_children: number | null;
   children_live_with_me: boolean | null;
@@ -67,9 +78,15 @@ export interface MatchmakingProfile {
   social_style: string | null;
   interests: string[];
   willing_to_relocate: string | null;
+  marriage_timeline: string | null;
+  marriage_structure: string | null;
+  long_distance_openness: string | null;
+  provider_model: string | null;
+  family_in_law_expectations: string | null;
   preferred_country_to_build_home: string | null;
   diaspora_return_intention: string | null;
   introduction: string | null;
+  marriage_vision_response: string | null;
   use_profile_image_for_matchmaking: boolean;
   completion_percentage: number;
   status: MatchmakingProfileStatus;
@@ -80,6 +97,7 @@ export interface MatchmakingProfile {
 
 export interface MatchmakingPreferences {
   user_id: string;
+  preferences_version: number;
   preferred_partner_gender: 'male' | 'female';
   age_min: number | null;
   age_max: number | null;
@@ -106,6 +124,7 @@ export interface MatchmakingPreferences {
   culture_mode: PreferenceMode;
   preferred_marital_statuses: string[];
   marital_status_mode: PreferenceMode;
+  preferred_children_statuses: string[];
   accepts_partner_with_children: boolean | null;
   children_mode: PreferenceMode;
   preferred_wants_children: string[];
@@ -121,20 +140,21 @@ export interface MatchmakingPreferences {
 }
 
 export interface MatchmakingAccount {
+  display_name: string | null;
   date_of_birth: string | null;
   age: number | null;
   gender: string | null;
   country_code: string | null;
   city: string | null;
-  location: string | null;
-  marriage_intention: string | null;
-  marriage_timeline: string | null;
-  commitment_level: string | null;
-  values_assessment: string[];
-  occupation: string | null;
-  bio: string | null;
+  nationality_country_code: string | null;
+  country_of_origin_code: string | null;
+  primary_language: string | null;
+  other_languages: string[];
+  legal_marital_status: string | null;
+  relationship_situation: string | null;
   profile_image_url: string | null;
   onboarding_completed: boolean;
+  account_status: string;
 }
 export interface MatchmakingSetup {
   account: MatchmakingAccount | null;
@@ -152,7 +172,7 @@ export interface MatchmakingDiscoveryProfile {
   introduction: string | null;
   education_level: string | null;
   occupation: string | null;
-  marital_status: string;
+  marital_status: string | null;
   has_children: boolean | null;
   wants_children: string | null;
   languages: string[];
@@ -163,6 +183,39 @@ export interface MatchmakingDiscoveryProfile {
   religion_or_faith: string | null;
   cultural_or_ethnic_community: string | null;
   created_at: string;
+}
+export interface MatchmakingDetailProfile {
+  profile_identifier: string;
+  age: number;
+  gender: string;
+  country_code: string;
+  city: string | null;
+  introduction: string | null;
+  physical_self_description: string | null;
+  education_level: string | null;
+  occupation: string | null;
+  marital_status: string;
+  has_children: boolean | null;
+  wants_children: string | null;
+  willing_to_relocate: string | null;
+  languages: string[];
+  profile_image_url: string | null;
+  religion_or_faith: string | null;
+  faith_practice_level: string | null;
+  faith_expectations: string | null;
+  cultural_or_ethnic_community: string | null;
+  marriage_vision_response: string | null;
+  height_cm: number | null;
+  field_of_study: string | null;
+  marriage_timeline: string | null;
+  marriage_structure: string | null;
+  long_distance_openness: string | null;
+  provider_model: string | null;
+  family_in_law_expectations: string | null;
+  family_involvement: string | null;
+  family_background: string | null;
+  clan_or_region: string | null;
+  alignments: string[];
 }
 export interface MatchmakingInterest {
   interest_id: string;
@@ -186,6 +239,44 @@ export interface MatchmakingAdminProfile {
   status: MatchmakingProfileStatus;
   submitted_at: string | null;
   introduction: string | null;
+}
+export interface MatchmakingAdminProfileDetail {
+  user_id: string;
+  display_name: string;
+  age: number | null;
+  country_code: string | null;
+  city: string | null;
+  legal_marital_status: string | null;
+  profile_version: number;
+  completion_percentage: number;
+  status: MatchmakingProfileStatus;
+  submitted_at: string | null;
+  height_cm: number | null;
+  physical_self_description: string | null;
+  introduction: string | null;
+  marriage_vision_response: string | null;
+  education_level: string | null;
+  field_of_study: string | null;
+  occupation: string | null;
+  employment_status: string | null;
+  has_children: boolean | null;
+  wants_children: string | null;
+  smoking: string | null;
+  drinking: string | null;
+  family_background: string | null;
+  family_involvement: string | null;
+  marriage_timeline: string | null;
+  marriage_structure: string | null;
+  willing_to_relocate: string | null;
+  long_distance_openness: string | null;
+  provider_model: string | null;
+  family_in_law_expectations: string | null;
+  religion_or_faith: string | null;
+  faith_practice_level: string | null;
+  denomination_or_tradition: string | null;
+  faith_expectations: string | null;
+  cultural_or_ethnic_community: string | null;
+  clan_or_region: string | null;
 }
 export interface MatchmakingAdminReviewHistory {
   user_id: string;

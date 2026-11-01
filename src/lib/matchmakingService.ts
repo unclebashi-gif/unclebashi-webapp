@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import type {
-  MatchmakingAdminProfile, MatchmakingAdminReport, MatchmakingAdminReviewHistory, MatchmakingDiscoveryProfile,
-  MatchmakingInterest, MatchmakingProfile, MatchmakingPreferences, MatchmakingSetup,
+  MatchmakingAdminProfile, MatchmakingAdminProfileDetail, MatchmakingAdminReport, MatchmakingAdminReviewHistory, MatchmakingDiscoveryProfile,
+  MatchmakingDetailProfile, MatchmakingInterest, MatchmakingProfile, MatchmakingPreferences, MatchmakingSetup,
 } from '@/types/matchmaking';
 import { MATCHMAKING_COUNTRIES } from '@/types/matchmaking';
 
@@ -50,13 +50,14 @@ function normalizeCountryCode(value: unknown, field: string): string | null {
 }
 
 const nullableProfileTextFields = [
-  'hometown', 'cultural_or_ethnic_community', 'religion_or_faith', 'faith_practice_level',
-  'education_level', 'field_of_study', 'employment_status', 'industry', 'marital_status',
-  'wants_children', 'smoking', 'drinking', 'exercise_level', 'social_style', 'willing_to_relocate',
-  'diaspora_return_intention', 'introduction',
+  'physical_self_description', 'occupation', 'financial_readiness', 'religion_or_faith', 'faith_practice_level',
+  'faith_importance', 'denomination_or_tradition', 'faith_expectations', 'cultural_or_ethnic_community',
+  'clan_or_region', 'family_background', 'family_involvement', 'education_level', 'field_of_study',
+  'employment_status', 'wants_children', 'smoking', 'drinking', 'willing_to_relocate', 'marriage_timeline',
+  'marriage_structure', 'long_distance_openness', 'provider_model', 'family_in_law_expectations',
+  'introduction', 'marriage_vision_response',
 ] as const;
-const optionalIntegerFields = ['height_cm', 'number_of_children', 'preferred_number_of_children'] as const;
-const countryArrayFields = ['preferred_nationalities', 'preferred_origins', 'preferred_residences'] as const;
+const optionalIntegerFields = ['height_cm', 'number_of_children'] as const;
 
 function normalizeOptionalInteger(value: unknown, field: string): number | null {
   if (value == null || (typeof value === 'string' && value.trim() === '')) return null;
@@ -69,9 +70,6 @@ function normalizeOptionalInteger(value: unknown, field: string): number | null 
 
 function normalizeProfilePayload(profile: Partial<MatchmakingProfile>): Partial<MatchmakingProfile> {
   const payload = pickFields(profile, profileFields) as Record<string, unknown>;
-  payload.nationality_country_code = normalizeCountryCode(payload.nationality_country_code, 'Nationality');
-  payload.country_of_origin_code = normalizeCountryCode(payload.country_of_origin_code, 'Country of origin');
-  payload.preferred_country_to_build_home = normalizeCountryCode(payload.preferred_country_to_build_home, 'Preferred country to build a home');
   for (const field of nullableProfileTextFields) {
     const value = payload[field];
     if (typeof value === 'string') payload[field] = value.trim() || null;
@@ -83,35 +81,28 @@ function normalizeProfilePayload(profile: Partial<MatchmakingProfile>): Partial<
 }
 function normalizePreferencesPayload(preferences: Partial<MatchmakingPreferences>): Partial<MatchmakingPreferences> {
   const payload = pickFields(preferences, preferenceFields) as Record<string, unknown>;
-  for (const field of countryArrayFields) {
-    if (Array.isArray(payload[field])) {
-      payload[field] = (payload[field] as unknown[])
-        .filter(value => typeof value === 'string' && value.trim() !== '')
-        .map(value => normalizeCountryCode(value, field));
-    }
+  if (Array.isArray(payload.preferred_residences)) {
+    payload.preferred_residences = (payload.preferred_residences as unknown[])
+      .filter(value => typeof value === 'string' && value.trim() !== '')
+      .map(value => normalizeCountryCode(value, 'Current residence preference'));
   }
-  for (const field of ['age_min', 'age_max', 'min_height_cm', 'max_height_cm']) {
+  for (const field of ['age_min', 'age_max']) {
     if (field in payload) payload[field] = normalizeOptionalInteger(payload[field], field);
   }
   return payload as Partial<MatchmakingPreferences>;
 }
 const profileFields = [
-  'nationality_country_code','country_of_origin_code','hometown','languages','height_cm',
-  'cultural_or_ethnic_community','show_cultural_community','use_cultural_community_for_matching',
-  'religion_or_faith','faith_practice_level','show_religion','use_religion_for_matching',
-  'education_level','field_of_study','employment_status','industry','marital_status','has_children',
-  'number_of_children','children_live_with_me','wants_children','preferred_number_of_children',
-  'smoking','drinking','exercise_level','social_style','interests','willing_to_relocate',
-  'preferred_country_to_build_home','diaspora_return_intention','introduction','use_profile_image_for_matchmaking',
+  'height_cm','physical_self_description','occupation','education_level','field_of_study','employment_status','financial_readiness',
+  'religion_or_faith','faith_practice_level','faith_importance','denomination_or_tradition','faith_expectations','show_religion','use_religion_for_matching',
+  'cultural_or_ethnic_community','show_cultural_community','use_cultural_community_for_matching','clan_or_region','show_clan_or_region',
+  'family_background','family_involvement','has_children','number_of_children','children_live_with_me','wants_children','smoking','drinking',
+  'marriage_timeline','marriage_structure','willing_to_relocate','long_distance_openness','provider_model','family_in_law_expectations',
+  'introduction','marriage_vision_response','use_profile_image_for_matchmaking',
 ] as const;
 const preferenceFields = [
-  'preferred_partner_gender','age_min','age_max','preferred_nationalities','nationality_mode','preferred_origins','origin_mode',
-  'preferred_residences','residence_mode','preferred_cities','city_mode','preferred_languages','language_mode','min_height_cm',
-  'max_height_cm','height_mode','preferred_education_levels','education_mode','preferred_religions','religion_mode',
-  'preferred_faith_practice_levels','faith_practice_mode','preferred_cultural_communities','culture_mode',
-  'preferred_marital_statuses','marital_status_mode','accepts_partner_with_children','children_mode',
-  'preferred_wants_children','wants_children_mode','preferred_smoking','smoking_mode','preferred_drinking','drinking_mode',
-  'preferred_relocation','relocation_mode',
+  'age_min','age_max','preferred_residences','residence_mode','preferred_religions','religion_mode',
+  'preferred_marital_statuses','marital_status_mode','preferred_children_statuses','children_mode',
+  'preferred_wants_children','wants_children_mode','preferred_relocation','relocation_mode',
 ] as const;
 function pickFields<T extends object>(value: T, fields: readonly string[]): Partial<T> {
   return Object.fromEntries(fields.filter(key => key in value).map(key => [key, (value as Record<string, unknown>)[key]])) as Partial<T>;
@@ -132,7 +123,7 @@ export const getMatchmakingDiscovery = (
   p_cursor_user_id: cursor?.profileIdentifier ?? null,
 });
 export const getMatchmakingProfile = (profileIdentifier: string) =>
-  rpc<MatchmakingDiscoveryProfile>('get_matchmaking_profile', { p_profile_identifier: profileIdentifier });
+  rpc<MatchmakingDetailProfile>('get_matchmaking_profile', { p_profile_identifier: profileIdentifier });
 export const sendMatchmakingInterest = (profileIdentifier: string) =>
   rpc<{ id: string; status: 'pending' | 'accepted'; created_at: string }[]>('send_matchmaking_interest', { p_profile_identifier: profileIdentifier });
 export const respondMatchmakingInterest = (interestId: string, decision: 'accept' | 'decline') =>
@@ -148,6 +139,8 @@ export const reportMatchmakingProfile = (
   details?: string,
 ) => rpc<string>('report_matchmaking_profile', { p_profile_identifier: profileIdentifier, p_reason: reason, p_details: details ?? null });
 export const getMatchmakingAdminQueue = () => rpc<MatchmakingAdminProfile[]>('get_matchmaking_admin_queue');
+export const getMatchmakingAdminProfileDetail = (userId: string) =>
+  rpc<MatchmakingAdminProfileDetail>('get_matchmaking_admin_profile_detail', { p_profile_user_id: userId });
 export const getMatchmakingAdminReviewHistory = () => rpc<MatchmakingAdminReviewHistory[]>('get_matchmaking_admin_review_history');
 export const getMatchmakingAdminReports = () => rpc<MatchmakingAdminReport[]>('get_matchmaking_admin_reports');
 export const reviewMatchmakingProfile = (userId: string, action: 'approve' | 'reject' | 'hide', notes?: string) =>
