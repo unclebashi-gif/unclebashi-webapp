@@ -4,6 +4,7 @@ import { useAppStore } from '@/lib/store';
 import { activateJourney, getMyJourneys, setJourneyStatus } from '@/lib/journeyService';
 import { journeyCoreEligible, journeyEligibilityMessage } from '@/lib/journeyEligibility';
 import { getMyCoachingProfile, getMyMarriageSupportProfile } from '@/lib/supportCoachingService';
+import { getMyCounsellingRequest } from '@/lib/counsellingService';
 import { JOURNEY_DESTINATIONS, JOURNEY_LABELS, JOURNEY_TYPES } from '@/types/journey';
 import type { JourneyStatus, JourneyType } from '@/types/journey';
 import { features } from '@/config/features';
@@ -14,7 +15,7 @@ const journeyDescriptions: Record<JourneyType, string> = {
   matchmaking: 'Build a profile and explore intentional introductions.',
   marriage_support: features.marriageSupportIntake ? 'A private intake to prepare Marriage Support.' : 'Support resources will appear here as they are enabled.',
   coaching: 'Access practical guidance and coaching support.',
-  counselling: 'Visit the counselling information and support page.',
+  counselling: features.counsellingGateway ? 'Request human counselling support and follow the request status.' : 'Visit the counselling information and support page.',
 };
 
 const statusLabel: Record<JourneyStatus, string> = {
@@ -30,7 +31,7 @@ export const MyJourneys: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [busyType, setBusyType] = useState<JourneyType | null>(null);
   const [error, setError] = useState('');
-  const [intakeStates, setIntakeStates] = useState<Partial<Record<'marriage_support' | 'coaching', 'not_started' | 'draft' | 'complete' | 'unavailable'>>>({});
+  const [intakeStates, setIntakeStates] = useState<Partial<Record<'marriage_support' | 'coaching' | 'counselling', string>>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -44,10 +45,15 @@ export const MyJourneys: React.FC = () => {
     const intakeTypes = [
       ...(features.marriageSupportIntake ? ['marriage_support' as const] : []),
       ...(features.coachingIntake ? ['coaching' as const] : []),
+      ...(features.counsellingGateway ? ['counselling' as const] : []),
     ];
     if (intakeTypes.length) {
       const results = await Promise.all(intakeTypes.map(async type => {
         try {
+          if (type === 'counselling') {
+            const request = await getMyCounsellingRequest();
+            return [type, request?.status ?? 'not_started'] as const;
+          }
           const profile = type === 'marriage_support'
             ? await getMyMarriageSupportProfile()
             : await getMyCoachingProfile();
@@ -101,14 +107,21 @@ export const MyJourneys: React.FC = () => {
         const busy = busyType === type;
         const destination = JOURNEY_DESTINATIONS[type];
         const intakeEnabled = type === 'marriage_support' ? features.marriageSupportIntake
-          : type === 'coaching' ? features.coachingIntake : false;
+          : type === 'coaching' ? features.coachingIntake : type === 'counselling' ? features.counsellingGateway : false;
         const openDestination = type === 'marriage_support' && !features.marriageSupportIntake ? undefined : destination;
-        const intakeStatus = type === 'marriage_support' || type === 'coaching'
+        const intakeValue = type === 'marriage_support' || type === 'coaching' || type === 'counselling' ? intakeStates[type] : undefined;
+        const counsellingLabels: Record<string, string> = {
+          not_started: 'Not started', draft: 'Draft', submitted: 'Submitted', under_review: 'Under review',
+          contacted: 'Contacted', referred: 'Referred', closed: 'Closed', withdrawn: 'Withdrawn',
+          unavailable: 'Request status unavailable',
+        };
+        const intakeStatus = type === 'marriage_support' || type === 'coaching' || type === 'counselling'
           ? journey?.status === 'paused' ? 'Paused'
-            : intakeStates[type] === 'complete' ? 'Intake complete'
-              : intakeStates[type] === 'draft' ? 'Draft'
-                : intakeStates[type] === 'not_started' ? 'Not started'
-                  : intakeStates[type] === 'unavailable' ? 'Intake status unavailable' : 'Loading intake status…'
+            : type === 'counselling' ? counsellingLabels[intakeValue ?? ''] ?? 'Loading request status…'
+              : intakeValue === 'complete' ? 'Intake complete'
+                : intakeValue === 'draft' ? 'Draft'
+                  : intakeValue === 'not_started' ? 'Not started'
+                    : intakeValue === 'unavailable' ? 'Intake status unavailable' : 'Loading intake status…'
           : null;
         const eligible = journeyCoreEligible(user, type);
         return <article key={type} className="rounded-xl border border-gray-200 p-4">

@@ -10,6 +10,8 @@ import { AdminCoachingPanel } from './AdminCoachingPanel';
 import { AdminMatchmakingPanel } from './AdminMatchmakingPanel';
 import { AdminPaymentsPanel } from './AdminPaymentsPanel';
 import { AdminCoursesPanel } from './AdminCoursesPanel';
+import { AdminCounsellingQueue } from './AdminCounsellingQueue';
+import { features } from '@/config/features';
 import {
   UsersIcon,
   BookIcon,
@@ -17,7 +19,7 @@ import {
   HeartIcon,
 } from '../ui/Icons';
 
-const ADMIN_TABS = ['overview', 'users', 'moderation', 'matching', 'coaching', 'payments', 'courses'] as const;
+const ADMIN_TABS = ['overview', 'users', 'moderation', 'matching', 'coaching', 'payments', 'courses', 'counselling'] as const;
 type AdminTab = (typeof ADMIN_TABS)[number];
 
 export const AdminDashboard: React.FC = () => {
@@ -26,9 +28,12 @@ export const AdminDashboard: React.FC = () => {
   const isModerator = user?.roles.includes('moderator') ?? false;
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
+  const authorizedTabs: AdminTab[] = isAdmin
+    ? ADMIN_TABS.filter((tab) => tab !== 'counselling' || features.counsellingGateway)
+    : isModerator ? ['moderation', ...(features.counsellingGateway ? ['counselling' as const] : [])] : [];
   const activeTab: AdminTab = isAdmin
-    ? ADMIN_TABS.includes(requestedTab as AdminTab) ? requestedTab as AdminTab : 'overview'
-    : isModerator ? 'moderation' : 'overview';
+    ? authorizedTabs.includes(requestedTab as AdminTab) ? requestedTab as AdminTab : 'overview'
+    : isModerator ? authorizedTabs.includes(requestedTab as AdminTab) ? requestedTab as AdminTab : 'moderation' : 'overview';
 
   useEffect(() => {
     if (!isAdmin && !isModerator) return;
@@ -40,7 +45,7 @@ export const AdminDashboard: React.FC = () => {
   }, [activeTab, isAdmin, isModerator, requestedTab, searchParams, setSearchParams]);
 
   const selectTab = (tab: AdminTab) => {
-    if (isAdmin || (isModerator && tab === 'moderation')) {
+    if (isAdmin || (isModerator && (tab === 'moderation' || (tab === 'counselling' && features.counsellingGateway)))) {
       const nextParams = new URLSearchParams(searchParams);
       nextParams.set('tab', tab);
       setSearchParams(nextParams);
@@ -237,7 +242,8 @@ export const AdminDashboard: React.FC = () => {
             { id: 'coaching', label: 'Coaching' },
             { id: 'payments', label: 'Payments' },
             { id: 'courses', label: 'Courses' },
-          ].filter((tab) => tab.id === 'moderation' || isAdmin).map((tab) => (
+            ...(features.counsellingGateway ? [{ id: 'counselling', label: 'Counselling' }] : []),
+          ].filter((tab) => tab.id === 'moderation' || tab.id === 'counselling' || isAdmin).map((tab) => (
             <button
               key={tab.id}
               onClick={() => selectTab(tab.id as AdminTab)}
@@ -395,6 +401,7 @@ export const AdminDashboard: React.FC = () => {
         {activeTab === 'coaching' && isAdmin && <AdminCoachingPanel />}
         {activeTab === 'payments' && isAdmin && <AdminPaymentsPanel />}
         {activeTab === 'courses' && isAdmin && <AdminCoursesPanel />}
+        {activeTab === 'counselling' && features.counsellingGateway && (isAdmin || isModerator) && <AdminCounsellingQueue />}
       </div>
     </div>
   );
