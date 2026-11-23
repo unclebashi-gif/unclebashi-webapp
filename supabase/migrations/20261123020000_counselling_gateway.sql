@@ -279,6 +279,7 @@ as $function$
 declare
   v_actor uuid := auth.uid();
   v_account_status text;
+  v_journey_status text;
   v_request public.counselling_requests%rowtype;
 begin
   if v_actor is null then
