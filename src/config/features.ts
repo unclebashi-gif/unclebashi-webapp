@@ -5,4 +5,5 @@ export const features = {
   matchmakingPhotosDiscovery: enabled(import.meta.env.VITE_MATCHMAKING_PHOTOS_DISCOVERY),
   marriageSupportIntake: enabled(import.meta.env.VITE_MARRIAGE_SUPPORT_INTAKE),
   coachingIntake: enabled(import.meta.env.VITE_COACHING_INTAKE),
+  counsellingGateway: enabled(import.meta.env.VITE_COUNSELLING_GATEWAY),
 } as const;

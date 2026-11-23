@@ -1,5 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { features } from '@/config/features';
+import { CounsellingGateway } from './CounsellingGateway';
 
 const pathway = [
   { title: 'Central intake', description: 'A clear first step to understand what kind of support may be helpful.' },
@@ -24,12 +26,18 @@ export const CounsellingPage: React.FC = () => (
         <p className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-[#c4785a]">Counselling</p>
         <h1 className="max-w-3xl text-4xl font-bold leading-tight text-[#1e3a5f] sm:text-5xl">A thoughtful path to relationship and emotional support</h1>
         <p className="mt-6 max-w-3xl text-lg leading-8 text-gray-600">
-          Uncle Bashi is developing a guided counselling pathway. The intended model begins with a central intake and assessment, followed by stabilisation and triage, then an appropriate referral to a partner psychotherapist when available.
+          {features.counsellingGateway
+            ? 'Uncle Bashi can help route a request for follow-up by a human counselling support team. Referral options depend on availability.'
+            : 'Uncle Bashi is developing a guided counselling pathway. The intended model begins with a central intake and assessment, followed by stabilisation and triage, then an appropriate referral to a partner psychotherapist when available.'}
         </p>
-        <p className="mt-4 max-w-3xl text-sm leading-6 text-gray-600">This service is in development and is not currently accepting counselling bookings. This page does not provide emergency support.</p>
+        <p className="mt-4 max-w-3xl text-sm leading-6 text-gray-600">{features.counsellingGateway
+          ? 'The request form is not an emergency service and is not monitored in real time.'
+          : 'This service is in development and is not currently accepting counselling bookings. This page does not provide emergency support.'}</p>
         <Link to="/contact" className="mt-8 inline-flex rounded-lg bg-[#1e3a5f] px-5 py-3 font-medium text-white transition hover:bg-[#294b73]">Contact Uncle Bashi</Link>
       </div>
     </section>
+
+    {features.counsellingGateway && <section className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8"><CounsellingGateway /></section>}
 
     <section className="mx-auto max-w-5xl px-4 py-16 sm:px-6 lg:px-8">
       <h2 className="text-2xl font-semibold text-[#1e3a5f]">Our planned pathway</h2>
