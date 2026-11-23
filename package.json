@@ -11,7 +11,9 @@
     "preview": "vite preview",
     "test:matchmaking-photos": "node tests/matchmaking-photos/run-acceptance.mjs",
     "test:support-coaching": "node tests/support-coaching/run-acceptance.mjs",
-    "test:counselling-gateway": "node tests/counselling-gateway/run-acceptance.mjs"
+    "test:counselling-gateway": "node tests/counselling-gateway/run-acceptance.mjs",
+    "test:trust-verification": "node --test tests/trust-verification/*.spec.mjs",
+    "test:trust-verification:integration": "node tests/trust-verification/run-readonly-integration.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
