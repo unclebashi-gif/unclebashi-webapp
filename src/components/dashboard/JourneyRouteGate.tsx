@@ -7,11 +7,12 @@ import { JOURNEY_LABELS } from '@/types/journey';
 import type { JourneyType } from '@/types/journey';
 
 interface Props {
-  type: 'matchmaking' | 'coaching';
+  type: 'matchmaking' | 'coaching' | 'marriage_support';
   children: React.ReactNode;
+  pausedContent?: React.ReactNode;
 }
 
-export const JourneyRouteGate: React.FC<Props> = ({ type, children }) => {
+export const JourneyRouteGate: React.FC<Props> = ({ type, children, pausedContent }) => {
   const user = useAppStore((state) => state.user);
   const journeys = useAppStore((state) => state.journeys);
   const upsertJourney = useAppStore((state) => state.upsertJourney);
@@ -27,6 +28,14 @@ export const JourneyRouteGate: React.FC<Props> = ({ type, children }) => {
       description={journeyEligibilityMessage(type)}
       action={<Button onClick={() => setCurrentView('profile')}>Update Core Profile</Button>}
     />;
+  }
+
+  if (type === 'marriage_support' && !eligible) {
+    return <><GateCard
+      title="Marriage Support is not available from your current Core Profile"
+      description={journeyEligibilityMessage(type)}
+      action={<Button onClick={() => setCurrentView('profile')}>Update Core Profile</Button>}
+    />{pausedContent}</>;
   }
 
   if (journey?.status === 'active' && eligible) return <>{children}</>;
@@ -54,14 +63,17 @@ export const JourneyRouteGate: React.FC<Props> = ({ type, children }) => {
     }
   };
 
-  return <GateCard
-    title={`${JOURNEY_LABELS[type]} is not active on your account`}
+  const paused = journey?.status === 'paused';
+  return <><GateCard
+    title={paused ? `${JOURNEY_LABELS[type]} is paused` : `${JOURNEY_LABELS[type]} is not active on your account`}
     description={type === 'matchmaking'
       ? 'Activate this journey before setting up your Marriage Matching profile.'
-      : 'Activate your Coaching journey to access coaching services.'}
+      : type === 'marriage_support'
+        ? 'Resume your Marriage Support journey to edit or complete its private intake.'
+        : 'Activate your Coaching journey to access coaching services.'}
     action={<Button onClick={() => void activate()} disabled={busy} isLoading={busy}>{actionLabel}</Button>}
     error={error}
-  />;
+  />{paused && pausedContent}</>;
 };
 
 const GateCard: React.FC<{ title: string; description: string; action?: React.ReactNode; error?: string }> = ({ title, description, action, error }) => (

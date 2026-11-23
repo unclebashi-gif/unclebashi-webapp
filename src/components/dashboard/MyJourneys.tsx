@@ -3,14 +3,16 @@ import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/lib/store';
 import { activateJourney, getMyJourneys, setJourneyStatus } from '@/lib/journeyService';
 import { journeyCoreEligible, journeyEligibilityMessage } from '@/lib/journeyEligibility';
+import { getMyCoachingProfile, getMyMarriageSupportProfile } from '@/lib/supportCoachingService';
 import { JOURNEY_DESTINATIONS, JOURNEY_LABELS, JOURNEY_TYPES } from '@/types/journey';
 import type { JourneyStatus, JourneyType } from '@/types/journey';
+import { features } from '@/config/features';
 
 const journeyDescriptions: Record<JourneyType, string> = {
   marriage_education: 'Learn about relationships, marriage and family life.',
   marriage_preparation: 'Prepare thoughtfully for a future marriage.',
   matchmaking: 'Build a profile and explore intentional introductions.',
-  marriage_support: 'Support resources will appear here as they are enabled.',
+  marriage_support: features.marriageSupportIntake ? 'A private intake to prepare Marriage Support.' : 'Support resources will appear here as they are enabled.',
   coaching: 'Access practical guidance and coaching support.',
   counselling: 'Visit the counselling information and support page.',
 };
@@ -28,6 +30,7 @@ export const MyJourneys: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [busyType, setBusyType] = useState<JourneyType | null>(null);
   const [error, setError] = useState('');
+  const [intakeStates, setIntakeStates] = useState<Partial<Record<'marriage_support' | 'coaching', 'not_started' | 'draft' | 'complete' | 'unavailable'>>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -37,6 +40,23 @@ export const MyJourneys: React.FC = () => {
       setError(cause instanceof Error ? cause.message : 'Could not load your journeys.');
     } finally {
       setLoading(false);
+    }
+    const intakeTypes = [
+      ...(features.marriageSupportIntake ? ['marriage_support' as const] : []),
+      ...(features.coachingIntake ? ['coaching' as const] : []),
+    ];
+    if (intakeTypes.length) {
+      const results = await Promise.all(intakeTypes.map(async type => {
+        try {
+          const profile = type === 'marriage_support'
+            ? await getMyMarriageSupportProfile()
+            : await getMyCoachingProfile();
+          return [type, !profile ? 'not_started' : profile.intake_completed_at ? 'complete' : 'draft'] as const;
+        } catch {
+          return [type, 'unavailable'] as const;
+        }
+      }));
+      setIntakeStates(current => ({ ...current, ...Object.fromEntries(results) }));
     }
   }, [setJourneys]);
 
@@ -80,16 +100,28 @@ export const MyJourneys: React.FC = () => {
         const journey = journeys.find((item) => item.journey_type === type);
         const busy = busyType === type;
         const destination = JOURNEY_DESTINATIONS[type];
+        const intakeEnabled = type === 'marriage_support' ? features.marriageSupportIntake
+          : type === 'coaching' ? features.coachingIntake : false;
+        const openDestination = type === 'marriage_support' && !features.marriageSupportIntake ? undefined : destination;
+        const intakeStatus = type === 'marriage_support' || type === 'coaching'
+          ? journey?.status === 'paused' ? 'Paused'
+            : intakeStates[type] === 'complete' ? 'Intake complete'
+              : intakeStates[type] === 'draft' ? 'Draft'
+                : intakeStates[type] === 'not_started' ? 'Not started'
+                  : intakeStates[type] === 'unavailable' ? 'Intake status unavailable' : 'Loading intake status…'
+          : null;
         const eligible = journeyCoreEligible(user, type);
         return <article key={type} className="rounded-xl border border-gray-200 p-4">
           <div className="flex flex-wrap items-start justify-between gap-2"><h3 className="font-semibold text-[#1e3a5f]">{JOURNEY_LABELS[type]}</h3>{journey && <div className="flex gap-2 text-xs"><span className="rounded-full bg-gray-100 px-2 py-1">{statusLabel[journey.status]}</span>{journey.is_primary && <span className="rounded-full bg-[#faf6f1] px-2 py-1 text-[#8d533b]">Primary</span>}</div>}</div>
           <p className="mt-2 min-h-10 text-sm text-gray-600">{journeyDescriptions[type]}</p>
+          {intakeEnabled && intakeStatus && <p className="mt-2 text-xs font-medium text-gray-600">Intake: {intakeStatus}</p>}
           {type === 'matchmaking' && !eligible && <p className="mt-2 text-xs text-gray-600">{journeyEligibilityMessage(type)}</p>}
           {type === 'marriage_support' && !eligible && <p className="mt-2 text-xs text-gray-600">{journeyEligibilityMessage(type)}</p>}
           <div className="mt-3 flex flex-wrap gap-2">
             {!journey && <Button size="sm" disabled={!eligible || busy} isLoading={busy} onClick={() => void activate(type)}>Start</Button>}
-            {journey?.status === 'active' && destination && <Button size="sm" onClick={() => setCurrentView(destination)}>Open</Button>}
-            {journey?.status === 'active' && type === 'marriage_support' && <span className="self-center text-xs text-gray-500">Resources will appear here as enabled.</span>}
+            {journey?.status === 'active' && openDestination && <Button size="sm" onClick={() => setCurrentView(openDestination)}>Open</Button>}
+            {journey?.status === 'active' && type === 'marriage_support' && !features.marriageSupportIntake && <span className="self-center text-xs text-gray-500">Resources will appear here as enabled.</span>}
+            {journey?.status === 'paused' && intakeEnabled && openDestination && <Button size="sm" variant="outline" onClick={() => setCurrentView(openDestination)}>Read intake</Button>}
             {journey?.status === 'active' && <Button size="sm" variant="outline" disabled={busy} onClick={() => void changeStatus(type, 'paused')}>Pause</Button>}
             {journey?.status === 'active' && !journey.is_primary && <Button size="sm" variant="outline" disabled={busy} onClick={() => void activate(type, true)}>Make Primary</Button>}
             {journey?.status === 'paused' && <Button size="sm" disabled={!eligible || busy} isLoading={busy} onClick={() => void activate(type)}>Resume</Button>}

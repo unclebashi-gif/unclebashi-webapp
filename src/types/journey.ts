@@ -42,6 +42,7 @@ export const JOURNEY_DESTINATIONS: Partial<Record<JourneyType, string>> = {
   marriage_education: 'education',
   marriage_preparation: 'education',
   matchmaking: 'matchmaking',
+  marriage_support: 'marriage-support',
   coaching: 'coaching',
   counselling: 'counselling',
 };

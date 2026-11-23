@@ -8,6 +8,7 @@ import { Footer } from './layout/Footer';
 import { AuthModal } from './auth/AuthModal';
 import NotFound from '@/pages/NotFound';
 import { JourneyRouteGate } from '@/components/dashboard/JourneyRouteGate';
+import { features } from '@/config/features';
 
 const HomePage = lazy(() => import('./HomePage').then(({ HomePage }) => ({ default: HomePage })));
 const OnboardingFlow = lazy(() => import('./onboarding/OnboardingFlow').then(({ OnboardingFlow }) => ({ default: OnboardingFlow })));
@@ -23,6 +24,8 @@ const ContactPage = lazy(() => import('./public/ContactPage').then(({ ContactPag
 const AboutPage = lazy(() => import('./public/AboutPage').then(({ AboutPage }) => ({ default: AboutPage })));
 const PrivacyPage = lazy(() => import('./public/PrivacyPage').then(({ PrivacyPage }) => ({ default: PrivacyPage })));
 const TermsPage = lazy(() => import('./public/TermsPage').then(({ TermsPage }) => ({ default: TermsPage })));
+const MarriageSupportIntake = lazy(() => import('./support/MarriageSupportIntake').then(({ MarriageSupportIntake }) => ({ default: MarriageSupportIntake })));
+const CoachingIntakePanel = lazy(() => import('./coaching/CoachingIntakePanel').then(({ CoachingIntakePanel }) => ({ default: CoachingIntakePanel })));
 
 const AppLayout: React.FC = () => {
   const location = useLocation();
@@ -125,7 +128,11 @@ const AppLayout: React.FC = () => {
       case 'community':
         return <CommunityHub />;
       case 'coaching':
-        return <JourneyRouteGate type="coaching"><CoachingHub /></JourneyRouteGate>;
+        return <JourneyRouteGate type="coaching" pausedContent={features.coachingIntake ? <CoachingIntakePanel readOnly /> : undefined}><CoachingHub /></JourneyRouteGate>;
+      case 'marriage-support':
+        return <JourneyRouteGate type="marriage_support" pausedContent={features.marriageSupportIntake ? <MarriageSupportIntake readOnly /> : undefined}>
+          {features.marriageSupportIntake ? <MarriageSupportIntake /> : <div className="mx-auto my-12 max-w-3xl rounded-2xl bg-white p-8 text-center text-gray-600">Marriage Support intake is not available yet.</div>}
+        </JourneyRouteGate>;
       case 'counselling':
         return <CounsellingPage />;
       case 'media':
