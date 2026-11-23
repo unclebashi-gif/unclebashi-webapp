@@ -125,7 +125,7 @@ declare
   v_definition text;
   v_privilege text;
   v_role text;
-  v_columns text[];
+  v_column text;
   v_signature text;
 begin
   if pg_catalog.to_regclass('public.user_verifications') is null then
@@ -147,48 +147,59 @@ begin
     raise exception 'Postcondition failed: user_verifications must not have direct-access policies.';
   end if;
 
+  -- PUBLIC grants also apply to anon, so anon denial proves no PUBLIC table/column privilege remains.
   foreach v_role in array array['anon', 'authenticated', 'service_role'] loop
     foreach v_privilege in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'] loop
       if pg_catalog.has_table_privilege(v_role, 'public.user_verifications', v_privilege) then
-        raise exception 'Postcondition failed: role % has direct % access to user_verifications.', v_role, v_privilege;
+        raise exception 'Postcondition failed: role % has effective % access to user_verifications.', v_role, v_privilege;
       end if;
+    end loop;
+    foreach v_column in array array[
+      'user_id', 'identity_status', 'identity_verified_at', 'identity_provider',
+      'identity_provider_reference', 'identity_document_type', 'identity_rejection_reason',
+      'created_at', 'updated_at'
+    ] loop
+      foreach v_privilege in array array['SELECT', 'INSERT', 'UPDATE', 'REFERENCES'] loop
+        if pg_catalog.has_column_privilege(v_role, 'public.user_verifications', v_column, v_privilege) then
+          raise exception 'Postcondition failed: role % has % on user_verifications column %.',
+            v_role, v_privilege, v_column;
+        end if;
+      end loop;
     end loop;
   end loop;
 
-  if exists (
-    select 1
-    from pg_catalog.pg_class as relation_row
-    cross join lateral pg_catalog.aclexplode(coalesce(relation_row.relacl, array[]::pg_catalog.aclitem[])) as acl
-    where relation_row.oid = 'public.user_verifications'::pg_catalog.regclass
-      and acl.grantee in (0, pg_catalog.to_regrole('anon')::oid,
-                          pg_catalog.to_regrole('authenticated')::oid,
-                          pg_catalog.to_regrole('service_role')::oid)
-  ) or exists (
-    select 1
+  if (
+    select pg_catalog.count(*)
     from pg_catalog.pg_attribute as attribute_row
-    cross join lateral pg_catalog.aclexplode(coalesce(attribute_row.attacl, array[]::pg_catalog.aclitem[])) as acl
     where attribute_row.attrelid = 'public.user_verifications'::pg_catalog.regclass
       and attribute_row.attnum > 0 and not attribute_row.attisdropped
-      and acl.grantee in (0, pg_catalog.to_regrole('anon')::oid,
-                          pg_catalog.to_regrole('authenticated')::oid,
-                          pg_catalog.to_regrole('service_role')::oid)
+  ) <> 9 or exists (
+    select 1 from pg_catalog.pg_attribute as attribute_row
+    where attribute_row.attrelid = 'public.user_verifications'::pg_catalog.regclass
+      and attribute_row.attnum > 0 and not attribute_row.attisdropped
+      and attribute_row.attname not in (
+        'created_at', 'identity_document_type', 'identity_provider',
+        'identity_provider_reference', 'identity_rejection_reason',
+        'identity_status', 'identity_verified_at', 'updated_at', 'user_id'
+      )
   ) then
-    raise exception 'Postcondition failed: browser/service roles or PUBLIC retain direct verification-table ACL entries.';
+    raise exception 'Postcondition failed: user_verifications contains unexpected columns.';
   end if;
 
-  select pg_catalog.array_agg(attribute_row.attname::text order by attribute_row.attname)
-    into v_columns
-  from pg_catalog.pg_attribute as attribute_row
-  where attribute_row.attrelid = 'public.user_verifications'::pg_catalog.regclass
-    and attribute_row.attnum > 0 and not attribute_row.attisdropped;
-
-  if v_columns is distinct from array[
+  foreach v_column in array array[
     'created_at', 'identity_document_type', 'identity_provider',
     'identity_provider_reference', 'identity_rejection_reason',
     'identity_status', 'identity_verified_at', 'updated_at', 'user_id'
-  ]::text[] then
-    raise exception 'Postcondition failed: user_verifications contains unexpected columns.';
-  end if;
+  ] loop
+    if not exists (
+      select 1 from pg_catalog.pg_attribute as attribute_row
+      where attribute_row.attrelid = 'public.user_verifications'::pg_catalog.regclass
+        and attribute_row.attname = v_column
+        and attribute_row.attnum > 0 and not attribute_row.attisdropped
+    ) then
+      raise exception 'Postcondition failed: required user_verifications column % is missing.', v_column;
+    end if;
+  end loop;
 
   if not exists (
     select 1 from pg_catalog.pg_trigger as trigger_row
@@ -222,17 +233,10 @@ begin
     raise exception 'Postcondition failed: owner status RPC result shape is unexpected.';
   end if;
 
+  -- Since PUBLIC privileges apply to anon, anon's denial also proves PUBLIC has no EXECUTE grant.
   if not pg_catalog.has_function_privilege('authenticated', v_oid, 'EXECUTE')
      or pg_catalog.has_function_privilege('anon', v_oid, 'EXECUTE')
      or pg_catalog.has_function_privilege('service_role', v_oid, 'EXECUTE')
-     or exists (
-       select 1
-       from pg_catalog.pg_proc as procedure_row
-       cross join lateral pg_catalog.aclexplode(coalesce(procedure_row.proacl, array[]::pg_catalog.aclitem[])) as acl
-       where procedure_row.oid = v_oid
-         and acl.grantee in (0, pg_catalog.to_regrole('anon')::oid, pg_catalog.to_regrole('service_role')::oid)
-         and acl.privilege_type = 'EXECUTE'
-     )
      or pg_catalog.strpos(v_definition, 'auth.uid()') = 0
      or pg_catalog.strpos(v_definition, 'right(auth_user.phone, 4)') = 0
      or pg_catalog.strpos(v_definition, 'auth_user.id = v_actor') = 0 then
