@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button } from '../ui/button';
+import { AdminMatchmakingPhotoReview } from './AdminMatchmakingPhotoReview';
+import { features } from '@/config/features';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -140,7 +142,7 @@ export const AdminMatchmakingPanel: React.FC = () => {
     }
   };
 
-  return <section className="bg-white rounded-xl shadow-sm p-6">
+  return <><section className="bg-white rounded-xl shadow-sm p-6">
     <div className="flex justify-between items-center">
       <div><h2 className="text-xl font-semibold text-[#1e3a5f]">Matchmaking operations</h2><p className="text-sm text-gray-600 mt-1">Review profiles and safety reports. Private partner preferences are not shown here.</p></div>
       <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>Refresh</Button>
@@ -201,5 +203,5 @@ export const AdminMatchmakingPanel: React.FC = () => {
         </> : !detailLoading && <p className="py-6 text-gray-500">The review profile could not be loaded. Close this window and try again.</p>}
       </DialogContent>
     </Dialog>
-  </section>;
+  </section>{features.matchmakingPhotosUI && <AdminMatchmakingPhotoReview />}</>;
 };

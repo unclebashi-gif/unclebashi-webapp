@@ -5,6 +5,32 @@ export type MatchmakingReportReason =
   | 'fake_profile' | 'harassment' | 'married_or_unavailable' | 'sexual_solicitation'
   | 'fraud_scam' | 'abusive_conduct' | 'inappropriate_photo' | 'other';
 export type MatchmakingReportStatus = 'pending' | 'reviewed' | 'dismissed' | 'actioned';
+export type MatchmakingPhotoStatus = 'pending_review' | 'approved' | 'rejected';
+
+export interface MatchmakingOwnerPhoto {
+  id: string;
+  display_order: number | null;
+  replaces_photo_id: string | null;
+  status: MatchmakingPhotoStatus;
+  upload_completed_at: string | null;
+  uploaded_at: string | null;
+  moderation_reason: string | null;
+  reviewed_at: string | null;
+}
+
+export interface MatchmakingPhotoId {
+  photo_id: string;
+  display_order: number;
+}
+
+export interface MatchmakingAdminPhotoReview {
+  id: string;
+  user_id: string;
+  display_order: number;
+  status: 'pending_review';
+  uploaded_at: string;
+  created_at: string;
+}
 
 export const MATCHMAKING_COUNTRIES = [
   { code: 'UG', country: 'Uganda', nationality: 'Ugandan' },
