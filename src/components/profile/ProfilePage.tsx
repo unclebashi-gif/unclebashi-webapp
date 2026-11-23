@@ -13,6 +13,8 @@ import {
   PenIcon,
 } from '../ui/Icons';
 import { CoreProfileEditor } from './CoreProfileEditor';
+import { TrustVerificationPanel } from './TrustVerificationPanel';
+import { features } from '@/config/features';
 
 
 
@@ -254,6 +256,10 @@ export const ProfilePage: React.FC = () => {
             </div>
           </div>
 
+          {features.trustVerificationUI && <div className="md:col-span-2"><TrustVerificationPanel /></div>}
+
+          {/* Legacy display remains unchanged while the Wave 7 UI flag is off. */}
+          {!features.trustVerificationUI && <>
           {/* Verification Card */}
           <div className="bg-white rounded-2xl shadow-sm p-6 md:col-span-2">
             <h2 className="text-lg font-bold text-[#1e3a5f] mb-4">Verification Status</h2>
@@ -295,6 +301,7 @@ export const ProfilePage: React.FC = () => {
               This process typically takes 24-48 hours.
             </p>
           </div>
+          </>}
 
           {/* Data Sync Status Card */}
           <div className="bg-white rounded-2xl shadow-sm p-6 md:col-span-2">

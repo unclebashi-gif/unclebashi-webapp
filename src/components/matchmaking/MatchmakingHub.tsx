@@ -17,6 +17,7 @@ import { ChoicePreference, CountryMultiSelect, PreferenceMode, TokenInput } from
 import { MatchmakingPhotoManager } from './MatchmakingPhotoManager';
 import { ApprovedMatchmakingPhotos } from './ApprovedMatchmakingPhotos';
 import { features } from '@/config/features';
+import { TrustVerificationPanel } from '@/components/profile/TrustVerificationPanel';
 
 type Tab = 'profile' | 'discover' | 'interests';
 type DraftState = { profile: Partial<MatchmakingProfile>; preferences: Partial<MatchmakingPreferences> };
@@ -333,6 +334,7 @@ export const MatchmakingHub: React.FC = () => {
     {tab === 'profile' && <section className="space-y-5">
       {loading ? <div className="bg-white rounded-xl p-8">Loading your profile…</div> : <>
         {features.matchmakingPhotosUI && <MatchmakingPhotoManager />}
+        {features.trustVerificationUI && <TrustVerificationPanel matchmakingReadiness />}
         {setup?.profile?.status === 'pending_review' && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">Your marriage profile is under review.</p>}
         {setup?.profile?.status === 'approved' && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">Your marriage profile has been approved for matchmaking.</p>}
         {setup?.profile?.status === 'rejected' && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">Your profile needs changes before it can be approved.</p>}
