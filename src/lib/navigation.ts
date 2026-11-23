@@ -3,6 +3,7 @@ export type AppView =
   | 'education'
   | 'community'
   | 'coaching'
+  | 'marriage-support'
   | 'matchmaking'
   | 'counselling'
   | 'media'
@@ -41,6 +42,7 @@ const viewPaths: Record<AppView, string> = {
   education: '/courses',
   community: '/community',
   coaching: '/coaching',
+  'marriage-support': '/marriage-support',
   matchmaking: '/matching',
   counselling: '/counselling',
   media: '/media',
@@ -60,6 +62,7 @@ const pathViews: Record<string, AppView> = {
   '/courses': 'education',
   '/community': 'community',
   '/coaching': 'coaching',
+  '/marriage-support': 'marriage-support',
   '/matching': 'matchmaking',
   '/counselling': 'counselling',
   '/media': 'media',

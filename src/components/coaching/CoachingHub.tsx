@@ -4,6 +4,8 @@ import { supabase } from '@/lib/supabase';
 import { Button } from '../ui/button';
 import { cancelCoachingBooking, decideCoachingBooking, getListedCoaches, getMyCoachingBookings, requestCoachingSession, completeCoachingBooking } from '@/lib/coachingService';
 import type { CoachingBooking, ListedCoach } from '@/types/coaching';
+import { features } from '@/config/features';
+import { CoachingIntakePanel } from './CoachingIntakePanel';
 import { COUNTRY_NAMES } from '@/hooks/useGeolocation';
 import { SparklesIcon, BookIcon, CalendarIcon, UserIcon, AlertCircleIcon, ClockIcon, MapPinIcon } from '../ui/Icons';
 
@@ -103,6 +105,7 @@ export const CoachingHub: React.FC = () => {
 
   return <div className="min-h-screen bg-[#faf6f1] py-8"><div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
     <header className="mb-8"><h1 className="text-3xl font-bold text-[#1e3a5f] mb-2">Coaching &amp; Guidance</h1><p className="text-gray-600">AI-guided reflection and access to human coaches across East Africa and the Diaspora.</p></header>
+    {features.coachingIntake && <CoachingIntakePanel />}
     <div className="flex space-x-1 bg-white rounded-xl p-1 mb-8 shadow-sm">{[
       ['journal','AI Journaling',SparklesIcon],['coaches','Our Coaches',UserIcon],['sessions',isCoach || isAdmin ? 'Bookings' : 'My Sessions',CalendarIcon],
     ].map(([id,label,Icon]) => <button key={String(id)} onClick={() => setTab(id as Tab)} className={'flex-1 flex items-center justify-center space-x-2 py-3 rounded-lg font-medium ' + (tab === id ? 'bg-[#1e3a5f] text-white' : 'text-gray-600 hover:bg-gray-50')}><Icon size={18}/><span className="hidden sm:inline">{String(label)}</span></button>)}</div>

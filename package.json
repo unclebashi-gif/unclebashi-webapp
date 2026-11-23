@@ -9,7 +9,8 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:matchmaking-photos": "node tests/matchmaking-photos/run-acceptance.mjs"
+    "test:matchmaking-photos": "node tests/matchmaking-photos/run-acceptance.mjs",
+    "test:support-coaching": "node tests/support-coaching/run-acceptance.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
