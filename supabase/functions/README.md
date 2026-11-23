@@ -46,3 +46,14 @@ the allowed origin to the approved Uncle Bashi web domains. Status polling
 currently retries about every five seconds (eight seconds after errors) and
 acquires a token for each check; this can create frequent MTN calls, so review
 the polling interval and consider a safe in-memory token cache before launch.
+# Matchmaking photo cleanup
+
+`matchmaking-photo-cleanup` is an authenticated, admin-only bounded worker. It
+does not run on a schedule in this repository. Before launch, operations must
+choose and configure a trusted invocation schedule or an admin-only operational
+runbook; do not call it with a service-role key from a browser.
+
+For photo Discovery, apply the additive approved-photo ID projection migration
+and complete consolidated acceptance before setting
+`VITE_MATCHMAKING_PHOTOS_DISCOVERY=true`. The owner/admin photo interface is
+controlled by `VITE_MATCHMAKING_PHOTOS_UI`; both flags default to false.

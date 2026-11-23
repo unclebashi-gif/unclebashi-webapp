@@ -15,3 +15,6 @@ verify_jwt = true
 
 [functions.matchmaking-photo-access]
 verify_jwt = true
+
+[functions.matchmaking-photo-cleanup]
+verify_jwt = true

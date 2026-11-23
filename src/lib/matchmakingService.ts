@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import type {
   MatchmakingAdminProfile, MatchmakingAdminProfileDetail, MatchmakingAdminReport, MatchmakingAdminReviewHistory, MatchmakingDiscoveryProfile,
   MatchmakingDetailProfile, MatchmakingInterest, MatchmakingProfile, MatchmakingPreferences, MatchmakingSetup,
+  MatchmakingAdminPhotoReview, MatchmakingOwnerPhoto, MatchmakingPhotoId,
 } from '@/types/matchmaking';
 import { MATCHMAKING_COUNTRIES } from '@/types/matchmaking';
 
@@ -195,4 +196,70 @@ export const reviewMatchmakingProfile = (userId: string, action: 'approve' | 're
   rpc<MatchmakingProfile>('review_matchmaking_profile', { p_profile_user_id: userId, p_action: action, p_notes: notes ?? null });
 export const reviewMatchmakingReport = (reportId: string, status: 'reviewed' | 'dismissed' | 'actioned', notes?: string) =>
   rpc<string>('review_matchmaking_report', { p_report_id: reportId, p_status: status, p_notes: notes ?? null });
+
+async function invokePhotoFunction<T>(functionName: string, body: Record<string, unknown>): Promise<T> {
+  await requireSession();
+  const { data, error } = await supabase.functions.invoke(functionName, { body });
+  if (error) throw new Error(error.message || 'Matchmaking photo request failed.');
+  if (data && typeof data === 'object' && 'error' in data && typeof data.error === 'string') {
+    throw new Error(data.error);
+  }
+  return data as T;
+}
+
+export const getMyMatchmakingPhotos = () => rpc<MatchmakingOwnerPhoto[]>('get_my_matchmaking_photos');
+
+export const createMatchmakingPhotoUploadSlot = (displayOrder: number, replacePhotoId?: string) =>
+  invokePhotoFunction<{ photo_id: string; signed_upload_url: string }>('matchmaking-photo-upload', {
+    action: 'create', display_order: displayOrder, replace_photo_id: replacePhotoId ?? null,
+  });
+
+export const uploadMatchmakingPhotoToSignedUrl = (
+  signedUrl: string,
+  image: Blob,
+  onProgress?: (percent: number) => void,
+): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('PUT', signedUrl);
+    request.setRequestHeader('Content-Type', 'image/webp');
+    request.upload.onprogress = event => {
+      if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100));
+    };
+    request.onload = () => request.status >= 200 && request.status < 300
+      ? resolve()
+      : reject(new Error('The photo upload did not complete. You can cancel this incomplete upload and try again.'));
+    request.onerror = () => reject(new Error('The photo upload could not reach secure storage.'));
+    request.onabort = () => reject(new Error('The photo upload was cancelled.'));
+    request.send(image);
+  });
+
+export const finalizeMatchmakingPhotoUpload = (photoId: string) =>
+  invokePhotoFunction<{ photo_id: string; status: 'pending_review' }>('matchmaking-photo-upload', {
+    action: 'finalize', photo_id: photoId,
+  });
+
+export const deleteMatchmakingPhoto = (photoId: string) =>
+  invokePhotoFunction<{ deleted: boolean; cleanup_pending: boolean }>('matchmaking-photo-upload', {
+    action: 'delete', photo_id: photoId,
+  });
+
+export const getMatchmakingPhotoViewUrl = async (photoId: string): Promise<string> => {
+  const result = await invokePhotoFunction<{ signed_url: string }>('matchmaking-photo-access', { photo_id: photoId });
+  return result.signed_url;
+};
+
+export const reorderMyMatchmakingPhotos = (photoIds: string[]) =>
+  rpc<boolean>('reorder_my_matchmaking_photos', { p_photo_ids: photoIds });
+
+export const getMatchmakingProfilePhotoIds = (profileIdentifier: string) =>
+  rpc<MatchmakingPhotoId[]>('get_matchmaking_profile_photo_ids', { p_profile_identifier: profileIdentifier });
+
+export const getAdminMatchmakingPhotoReviewQueue = () =>
+  rpc<MatchmakingAdminPhotoReview[]>('get_admin_matchmaking_photo_review_queue', { p_limit: 100 });
+
+export const reviewMatchmakingPhoto = (photoId: string, decision: 'approve' | 'reject', reason?: string) =>
+  rpc<boolean>('review_matchmaking_photo', {
+    p_photo_id: photoId, p_decision: decision, p_reason: reason?.trim() || null,
+  });
 

@@ -1,0 +1,6 @@
+const enabled = (value: string | undefined): boolean => value?.trim().toLowerCase() === 'true';
+
+export const features = {
+  matchmakingPhotosUI: enabled(import.meta.env.VITE_MATCHMAKING_PHOTOS_UI),
+  matchmakingPhotosDiscovery: enabled(import.meta.env.VITE_MATCHMAKING_PHOTOS_DISCOVERY),
+} as const;

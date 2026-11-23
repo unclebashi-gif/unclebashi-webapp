@@ -2,12 +2,16 @@
 /.env
 /.env.*
 !/.env.example
+!/.env.test.example
 
 # Dependencies
 /node_modules/
 
 # Build output
 /dist/
+/test-results/
+/playwright-report/
+/.playwright-browsers/
 
 # Supabase local/temp files
 supabase/.temp/
