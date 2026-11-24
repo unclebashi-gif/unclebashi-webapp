@@ -14,6 +14,7 @@ import {
 } from '../ui/Icons';
 import { CoreProfileEditor } from './CoreProfileEditor';
 import { TrustVerificationPanel } from './TrustVerificationPanel';
+import { AccountLifecyclePanel } from './AccountLifecyclePanel';
 import { features } from '@/config/features';
 
 
@@ -81,6 +82,7 @@ export const ProfilePage: React.FC = () => {
         )}
 
         <CoreProfileEditor />
+        {features.accountLifecycleUI && <AccountLifecyclePanel />}
 
         {/* Profile Header */}
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden mb-6">
