@@ -124,6 +124,9 @@ export const MyJourneys: React.FC = () => {
                     : intakeValue === 'unavailable' ? 'Intake status unavailable' : 'Loading intake status…'
           : null;
         const eligible = journeyCoreEligible(user, type);
+        const accountActive = user?.accountStatus === 'active';
+        const lifecycleEnabled = features.accountLifecycleUI && user?.accountStatus === 'active';
+        const supportsWithdrawal = ['matchmaking', 'marriage_support', 'coaching', 'counselling'].includes(type);
         return <article key={type} className="rounded-xl border border-gray-200 p-4">
           <div className="flex flex-wrap items-start justify-between gap-2"><h3 className="font-semibold text-[#1e3a5f]">{JOURNEY_LABELS[type]}</h3>{journey && <div className="flex gap-2 text-xs"><span className="rounded-full bg-gray-100 px-2 py-1">{statusLabel[journey.status]}</span>{journey.is_primary && <span className="rounded-full bg-[#faf6f1] px-2 py-1 text-[#8d533b]">Primary</span>}</div>}</div>
           <p className="mt-2 min-h-10 text-sm text-gray-600">{journeyDescriptions[type]}</p>
@@ -132,14 +135,19 @@ export const MyJourneys: React.FC = () => {
           {type === 'marriage_support' && !eligible && <p className="mt-2 text-xs text-gray-600">{journeyEligibilityMessage(type)}</p>}
           <div className="mt-3 flex flex-wrap gap-2">
             {!journey && <Button size="sm" disabled={!eligible || busy} isLoading={busy} onClick={() => void activate(type)}>Start</Button>}
-            {journey?.status === 'active' && openDestination && <Button size="sm" onClick={() => setCurrentView(openDestination)}>Open</Button>}
+            {journey?.status === 'active' && openDestination && <Button size="sm" disabled={!accountActive} onClick={() => setCurrentView(openDestination)}>Open</Button>}
             {journey?.status === 'active' && type === 'marriage_support' && !features.marriageSupportIntake && <span className="self-center text-xs text-gray-500">Resources will appear here as enabled.</span>}
-            {journey?.status === 'paused' && intakeEnabled && openDestination && <Button size="sm" variant="outline" onClick={() => setCurrentView(openDestination)}>Read intake</Button>}
-            {journey?.status === 'active' && <Button size="sm" variant="outline" disabled={busy} onClick={() => void changeStatus(type, 'paused')}>Pause</Button>}
-            {journey?.status === 'active' && !journey.is_primary && <Button size="sm" variant="outline" disabled={busy} onClick={() => void activate(type, true)}>Make Primary</Button>}
+            {journey?.status === 'paused' && intakeEnabled && openDestination && <Button size="sm" variant="outline" disabled={!accountActive} onClick={() => setCurrentView(openDestination)}>Read intake</Button>}
+            {journey?.status === 'active' && <Button size="sm" variant="outline" disabled={busy || !accountActive} onClick={() => void changeStatus(type, 'paused')}>Pause</Button>}
+            {journey?.status === 'active' && !journey.is_primary && <Button size="sm" variant="outline" disabled={busy || !accountActive} onClick={() => void activate(type, true)}>Make Primary</Button>}
             {journey?.status === 'paused' && <Button size="sm" disabled={!eligible || busy} isLoading={busy} onClick={() => void activate(type)}>Resume</Button>}
             {journey?.status === 'withdrawn' && <Button size="sm" disabled={!eligible || busy} isLoading={busy} onClick={() => void activate(type)}>Restart</Button>}
             {journey?.status === 'completed' && <span className="self-center text-sm text-gray-500">This journey is complete.</span>}
+            {lifecycleEnabled && supportsWithdrawal && ['active', 'paused'].includes(journey?.status ?? '')
+              && (type === 'marriage_support' || type === 'coaching') && intakeValue === 'complete'
+              && <Button size="sm" variant="outline" disabled={busy} onClick={() => void changeStatus(type, 'completed')}>Complete</Button>}
+            {lifecycleEnabled && ['active', 'paused'].includes(journey?.status ?? '')
+              && <Button size="sm" variant="outline" disabled={busy} onClick={() => void changeStatus(type, 'withdrawn')}>Withdraw</Button>}
           </div>
         </article>;
       })}

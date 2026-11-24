@@ -8,4 +8,6 @@ export const features = {
   counsellingGateway: enabled(import.meta.env.VITE_COUNSELLING_GATEWAY),
   trustVerificationUI: enabled(import.meta.env.VITE_TRUST_VERIFICATION_UI),
   matchmakingPhoneVerificationEnforcement: enabled(import.meta.env.VITE_MATCHMAKING_PHONE_VERIFICATION_ENFORCEMENT),
+  accountLifecycleUI: enabled(import.meta.env.VITE_ACCOUNT_LIFECYCLE_UI),
+  hardAccountDeletion: enabled(import.meta.env.VITE_HARD_ACCOUNT_DELETION),
 } as const;

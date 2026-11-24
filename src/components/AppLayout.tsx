@@ -48,6 +48,11 @@ const AppLayout: React.FC = () => {
       navigate('/', { replace: true });
       return;
     }
+    if (isAuthenticated && user && user.accountStatus !== 'active'
+      && ['education', 'community', 'coaching', 'marriage-support', 'counselling', 'matchmaking', 'admin'].includes(routeView)) {
+      navigate('/settings', { replace: true });
+      return;
+    }
     if (isAuthenticated && user && !user.onboardingCompleted && routeView !== 'onboarding' && !isPublicView(routeView)) {
       navigate('/onboarding', { replace: true });
       return;
@@ -118,6 +123,17 @@ const AppLayout: React.FC = () => {
     // If not authenticated, show home page for most views
     if (!isAuthenticated && !isPublicView(currentView)) {
       return <HomePage />;
+    }
+
+    const requiresActiveAccount = [
+      'education', 'community', 'coaching', 'marriage-support', 'counselling', 'matchmaking', 'admin',
+    ].includes(currentView);
+    if (isAuthenticated && requiresActiveAccount && user?.accountStatus !== 'active') {
+      return <section className="mx-auto my-12 max-w-3xl rounded-2xl border border-amber-200 bg-white p-8 text-center shadow-sm">
+        <h1 className="text-2xl font-bold text-[#1e3a5f]">Account deactivated</h1>
+        <p className="mx-auto mt-3 max-w-xl text-gray-600">Protected participation is unavailable while your account is deactivated. Visit Profile or Settings to review account options.</p>
+        <button type="button" className="mt-6 rounded-lg bg-[#1e3a5f] px-4 py-2 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2" onClick={() => navigate('/settings')}>Open account settings</button>
+      </section>;
     }
 
     switch (currentView) {
