@@ -15,7 +15,8 @@
     "test:trust-verification": "node --test tests/trust-verification/*.spec.mjs",
     "test:trust-verification:integration": "node tests/trust-verification/run-readonly-integration.mjs",
     "test:lifecycle-deletion": "node --test tests/lifecycle-deletion/*.spec.mjs",
-    "test:lifecycle-deletion:integration": "node tests/lifecycle-deletion/run-acceptance.mjs"
+    "test:lifecycle-deletion:integration": "node tests/lifecycle-deletion/run-acceptance.mjs",
+    "test:release-baseline": "node tests/release/phase3-release-baseline.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
