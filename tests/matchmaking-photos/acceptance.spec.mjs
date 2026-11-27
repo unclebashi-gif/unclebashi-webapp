@@ -123,32 +123,43 @@ test('Wave 4 photo lifecycle, visibility, moderation, replacement, reorder, and 
     const anonymousAccess = await invoke(anonymous, 'matchmaking-photo-access', { photo_id: '00000000-0000-4000-8000-000000000000' });
     await expectDenied(anonymousAccess, 'Anonymous photo access');
 
+    const invalidSlot = await invoke(owner, 'matchmaking-photo-upload', { action: 'create', display_order: 1 });
+    expect(invalidSlot.error).toBeNull();
+    createdPhotoIds.add(invalidSlot.data.photo_id);
+    const invalidUpload = await fetch(invalidSlot.data.signed_upload_url, {
+      method: 'PUT', headers: { 'Content-Type': 'image/webp' }, body: Buffer.from('not a WebP container'),
+    });
+    expect(invalidUpload.ok).toBeTruthy();
+    const invalidFinalize = await invoke(owner, 'matchmaking-photo-upload', {
+      action: 'finalize', photo_id: invalidSlot.data.photo_id,
+    });
+    expect(invalidFinalize.error, 'Incorrect bytes must not be published as a WebP photo.').toBeTruthy();
+    expect((await ownerPhotos(owner)).find(row => row.id === invalidSlot.data.photo_id)?.upload_completed_at).toBeNull();
+    expect((await invoke(owner, 'matchmaking-photo-upload', { action: 'delete', photo_id: invalidSlot.data.photo_id })).error).toBeNull();
+
     const firstId = await uploadPhoto(page, owner, 1);
     let rows = await ownerPhotos(owner);
-    expect(rows.find(row => row.id === firstId)?.status).toBe('pending_review');
+    expect(rows.find(row => row.id === firstId)?.status).toBe('approved');
     expect(rows.find(row => row.id === firstId)?.upload_completed_at).toBeTruthy();
 
-    const pendingOwnerView = await invoke(owner, 'matchmaking-photo-access', { photo_id: firstId });
-    expect(pendingOwnerView.error, 'Owner should preview own pending photo.').toBeNull();
-    expect(pendingOwnerView.data?.signed_url).toBeTruthy();
-    await expectDenied(await invoke(other, 'matchmaking-photo-access', { photo_id: firstId }), 'Cross-member pending photo access');
+    const ownerView = await invoke(owner, 'matchmaking-photo-access', { photo_id: firstId });
+    expect(ownerView.error, 'Owner should access own published photo.').toBeNull();
+    expect(ownerView.data?.signed_url).toBeTruthy();
+    const firstMemberView = await invoke(other, 'matchmaking-photo-access', { photo_id: firstId });
+    expect(firstMemberView.error, 'Eligible member should access a new photo immediately after finalization.').toBeNull();
+    expect(firstMemberView.data?.signed_url).toBeTruthy();
 
     const memberReviewAttempt = await other.rpc('review_matchmaking_photo', {
       p_photo_id: firstId, p_decision: 'approve', p_reason: null,
     });
     expect(memberReviewAttempt.error, 'Ordinary member photo moderation should be denied.').toBeTruthy();
-    expect((await ownerPhotos(owner)).find(row => row.id === firstId)?.status).toBe('pending_review');
+    expect((await ownerPhotos(owner)).find(row => row.id === firstId)?.status).toBe('approved');
 
     const queue = await rpc(admin, 'get_admin_matchmaking_photo_review_queue', { p_limit: 100 });
-    expect(queue.some(row => row.id === firstId), 'Admin should see the pending photo in the review queue.').toBeTruthy();
-    expect(await rpc(admin, 'review_matchmaking_photo', { p_photo_id: firstId, p_decision: 'approve', p_reason: null })).toBeTruthy();
-    rows = await ownerPhotos(owner);
-    expect(rows.find(row => row.id === firstId)?.status).toBe('approved');
-    const approvedMemberView = await invoke(other, 'matchmaking-photo-access', { photo_id: firstId });
-    expect(approvedMemberView.error, 'Eligible member should receive approved photo access.').toBeNull();
-    expect(approvedMemberView.data?.signed_url).toBeTruthy();
+    expect(queue.some(row => row.id === firstId && row.status === 'approved'), 'Admin moderation queue should include a published photo.').toBeTruthy();
 
     const secondId = await uploadPhoto(page, owner, 2);
+    expect((await ownerPhotos(owner)).find(row => row.id === secondId)?.status).toBe('approved');
     expect(await rpc(admin, 'review_matchmaking_photo', {
       p_photo_id: secondId, p_decision: 'reject', p_reason: 'Acceptance test rejection reason.',
     })).toBeTruthy();
@@ -172,22 +183,29 @@ test('Wave 4 photo lifecycle, visibility, moderation, replacement, reorder, and 
     const replacementId = await uploadPhoto(page, owner, 1, firstId);
     rows = await ownerPhotos(owner);
     expect(rows.find(row => row.id === firstId)).toBeUndefined();
-    expect(rows.find(row => row.id === replacementId)?.status).toBe('pending_review');
+    expect(rows.find(row => row.id === replacementId)?.status).toBe('approved');
     await expectDenied(await invoke(other, 'matchmaking-photo-access', { photo_id: firstId }), 'Access to the retired replaced photo');
     const afterReplacementSetup = await rpc(owner, 'get_my_matchmaking_setup');
     expect(afterReplacementSetup.profile?.status, 'Photo replacement must not reset biodata moderation.').toBe(beforeProfileStatus);
     expect(afterReplacementSetup.account?.profile_image_url, 'Photo replacement must not change Core profile image.').toBe(beforeCoreImage);
 
     const thirdId = await uploadPhoto(page, owner, 3);
+    expect((await ownerPhotos(owner)).find(row => row.id === thirdId)?.status).toBe('approved');
     rows = await ownerPhotos(owner);
     const ordered = rows.filter(row => row.upload_completed_at && row.display_order !== null)
       .sort((a, b) => a.display_order - b.display_order);
     const statusesBeforeReorder = new Map(ordered.map(row => [row.id, row.status]));
     expect(await rpc(owner, 'reorder_my_matchmaking_photos', { p_photo_ids: [...ordered].reverse().map(row => row.id) })).toBeTruthy();
     rows = await ownerPhotos(owner);
+    expect(rows.find(row => row.display_order === 1)?.id).toBe(ordered[ordered.length - 1]?.id);
     for (const row of rows.filter(item => statusesBeforeReorder.has(item.id))) {
       expect(row.status).toBe(statusesBeforeReorder.get(row.id));
     }
+    expect(await rpc(admin, 'review_matchmaking_photo', {
+      p_photo_id: thirdId, p_decision: 'remove', p_reason: 'Acceptance test removal of published photo.',
+    })).toBeTruthy();
+    expect((await ownerPhotos(owner)).some(row => row.id === thirdId), 'Admin-removed photo should leave the owner projection.').toBeFalsy();
+    await expectDenied(await invoke(other, 'matchmaking-photo-access', { photo_id: thirdId }), 'Access to an admin-removed published photo');
     const overLimit = await invoke(owner, 'matchmaking-photo-upload', { action: 'create', display_order: 3 });
     expect(overLimit.error, 'A fourth active photo slot must be rejected.').toBeTruthy();
 

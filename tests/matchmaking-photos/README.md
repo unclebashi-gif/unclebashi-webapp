@@ -16,8 +16,9 @@ roles, or account settings.
 3. Set `TEST_MATCHMAKING_PHOTOS_ALLOW_MUTATIONS=true` only after confirming the
    URL and accounts are disposable. The suite prints variable names only, never
    passwords, JWTs, or signed URLs.
-4. The project must have the Wave 4A foundation and member-projection migration
-   applied, and the photo Edge Functions deployed to that test project.
+4. The project must have the Wave 4A foundation, member-projection, cleanup
+   conflict correction, and `20261127000000_matchmaking_photo_release_refinements.sql`
+   migrations applied, and the updated photo Edge Functions deployed to that test project.
 5. Install the browser once (PowerShell):
 
    ```powershell
@@ -31,12 +32,23 @@ roles, or account settings.
 npm.cmd run test:matchmaking-photos
 ```
 
-The end-to-end test checks upload/finalize, owner and member privacy, moderation,
-rejection feedback, replacement lifecycle, reorder, slot limit, deletion, Core
-image and biodata moderation preservation, plus anonymous denial. It logically
-retires only photo rows it created. Storage objects enter the normal two-hour
-cleanup queue and are removed by the cleanup worker after the signed-upload
-grace period.
+New uploads publish only after the authenticated Edge Function verifies
+Storage metadata and the bounded RIFF/WebP container, then calls the new
+service-role-only, versioned finalizer signature. The legacy finalizer signature
+is removed so an older deployed upload function fails closed. This container
+check is not a full decoder or content moderation service. Historical
+pending/rejected rows are not auto-approved. Admin/moderator controls can
+publish legacy pending rows, reject pending or published rows, and remove
+published rows with a reason.
+
+The end-to-end test checks upload/finalize, owner and eligible-member privacy,
+automatic publication, moderation/rejection/removal, replacement lifecycle,
+reorder/primary ordering, slot limit, deletion, Core image and biodata
+moderation preservation, plus anonymous denial. It logically retires only photo
+rows it created. Storage objects enter the normal two-hour cleanup queue and
+are removed by the cleanup worker after the signed-upload grace period. The
+suite does not create a historical pending row, so legacy approval remains a
+database-contract/manual acceptance item.
 
 The image normalization test can run without Supabase credentials:
 
@@ -56,5 +68,11 @@ psql "$env:TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/matchmaking-photos/dat
 ```
 
 The SQL script starts a read-only transaction and rolls it back. It checks RLS,
-the private WebP bucket, browser/service-role grants, photo RPC grants, and that
-the existing eligibility function has not gained photo-count logic.
+the private WebP bucket, publication metadata, browser/service-role grants,
+photo RPC grants, automatic finalizer/admin moderation behavior, and that the
+existing eligibility function has not gained photo-count logic.
+
+Both `VITE_MATCHMAKING_PHOTOS_UI` and
+`VITE_MATCHMAKING_PHOTOS_DISCOVERY` must remain false until human acceptance
+and the cleanup-operations gate pass. Matchmaking eligibility has no minimum
+photo-count requirement.

@@ -12,7 +12,7 @@ import type { MatchmakingOwnerPhoto } from '@/types/matchmaking';
 const statusText = (photo: MatchmakingOwnerPhoto): string => {
   if (!photo.upload_completed_at) return 'Upload incomplete';
   if (photo.status === 'pending_review') return 'Pending review';
-  return photo.status === 'approved' ? 'Approved' : 'Rejected';
+  return photo.status === 'approved' ? 'Published' : 'Rejected';
 };
 
 export const MatchmakingPhotoManager: React.FC = () => {
@@ -43,7 +43,7 @@ export const MatchmakingPhotoManager: React.FC = () => {
   }, [refresh]);
 
   const incomplete = useMemo(() => photos.some(photo => !photo.upload_completed_at), [photos]);
-  const approvedCount = photos.filter(photo => photo.upload_completed_at && photo.status === 'approved').length;
+  const publishedCount = photos.filter(photo => photo.upload_completed_at && photo.status === 'approved').length;
 
   const upload = async (position: number, file: File, replacePhotoId?: string) => {
     const key = replacePhotoId ?? `position-${position}`;
@@ -57,9 +57,7 @@ export const MatchmakingPhotoManager: React.FC = () => {
       await uploadMatchmakingPhotoToSignedUrl(slot.signed_upload_url, image, setUploadProgress);
       await finalizeMatchmakingPhotoUpload(slot.photo_id);
       await refresh();
-      toast.success(replacePhotoId
-        ? 'Replacement uploaded and sent for photo review.'
-        : 'Photo uploaded and sent for review.');
+      toast.success(replacePhotoId ? 'Replacement photo published.' : 'Photo published.');
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'The photo could not be uploaded.';
       setError(message);
@@ -128,14 +126,34 @@ export const MatchmakingPhotoManager: React.FC = () => {
     }
   };
 
+  const makePrimary = async (photoId: string) => {
+    const ordered = photos.filter(photo => photo.upload_completed_at && photo.display_order !== null)
+      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+    if (incomplete || !ordered.some(photo => photo.id === photoId && photo.status === 'approved')) return;
+    const ids = [photoId, ...ordered.filter(photo => photo.id !== photoId).map(photo => photo.id)];
+    setBusy('reorder');
+    try {
+      await reorderMyMatchmakingPhotos(ids);
+      await refresh();
+      toast.success('Primary Matchmaking photo updated.');
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'Primary photo could not be updated.';
+      setError(message);
+      toast.error(message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const activeForPosition = (position: number) => photos.find(photo => photo.display_order === position && photo.replaces_photo_id === null);
   const replacementFor = (photoId: string) => photos.find(photo => photo.replaces_photo_id === photoId && !photo.upload_completed_at);
 
   return <section className="rounded-xl border border-[#e8e1d8] bg-white p-5 shadow-sm">
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><h2 className="text-xl font-semibold text-[#1e3a5f]">Matchmaking photos</h2><p className="mt-1 text-sm text-gray-600">These photos are separate from your Core Profile image. New photos are reviewed before members can see them.</p></div>
-      <div className="text-right text-sm"><p className="font-medium">{approvedCount} of 2 approved</p><p className="text-gray-500">Maximum 3 photos</p></div>
+      <div><h2 className="text-xl font-semibold text-[#1e3a5f]">Matchmaking photos</h2><p className="mt-1 text-sm text-gray-600">These photos are separate from your Core Profile image. New photos publish after server validation; staff may review and remove published photos.</p></div>
+      <div className="text-right text-sm"><p className="font-medium">{publishedCount} published</p><p className="text-gray-500">Maximum 3 photos</p></div>
     </div>
+    <p className="mt-3 rounded-md bg-[#f8f5f0] p-3 text-sm text-gray-700">Use a genuine, respectful photo of yourself. Do not include contact details or private images of other people. New photos are checked for valid image format and account eligibility before publication. Matchmaking photos are separate from your Core Profile image.</p>
     {error && <p role="alert" className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-800">{error}</p>}
     {loading ? <p className="py-6 text-sm text-gray-500">Loading your photos…</p> : <div className="mt-5 grid gap-4 md:grid-cols-3">
       {[1, 2, 3].map(position => {
@@ -147,7 +165,7 @@ export const MatchmakingPhotoManager: React.FC = () => {
         const incompleteNew = photo && !photo.upload_completed_at;
         const targetId = photo?.upload_completed_at && replaceTarget === photo.id ? photo.id : undefined;
         return <article key={position} className="rounded-lg border border-gray-200 p-3">
-          <h3 className="font-semibold text-[#1e3a5f]">Photo {position}</h3>
+          <h3 className="font-semibold text-[#1e3a5f]">{position === 1 ? 'Photo 1 — Primary Profile Photo' : `Photo ${position} — Additional Photo`}</h3>
           {!photo || incompleteNew ? <>
             <p className="my-3 min-h-6 text-sm text-gray-600">{uploadPosition === position ? 'Uploading' : incompleteNew ? statusText(photo) : 'Empty'}</p>
             {incompleteNew ? <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void remove(photo)}>Cancel upload</Button>
@@ -164,6 +182,7 @@ export const MatchmakingPhotoManager: React.FC = () => {
             <div className="mt-3 flex flex-wrap gap-2">
               <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void preview(photo.id)}>Preview</Button>
               {!replacement && <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => setReplaceTarget(photo.id)}>Replace</Button>}
+              {photo.status === 'approved' && position !== 1 && <Button size="sm" variant="outline" disabled={busy !== null || incomplete} onClick={() => void makePrimary(photo.id)}>Make Primary Photo</Button>}
               <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void remove(photo)}>Delete</Button>
             </div>
             {targetId && <label className="mt-2 block text-sm">Choose replacement photo<input className="mt-1 block w-full text-sm" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy !== null}

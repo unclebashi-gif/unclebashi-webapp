@@ -235,7 +235,7 @@ export const uploadMatchmakingPhotoToSignedUrl = (
   });
 
 export const finalizeMatchmakingPhotoUpload = (photoId: string) =>
-  invokePhotoFunction<{ photo_id: string; status: 'pending_review' }>('matchmaking-photo-upload', {
+  invokePhotoFunction<{ photo_id: string; status: 'approved'; publication_source: 'automatic' }>('matchmaking-photo-upload', {
     action: 'finalize', photo_id: photoId,
   });
 
@@ -258,7 +258,7 @@ export const getMatchmakingProfilePhotoIds = (profileIdentifier: string) =>
 export const getAdminMatchmakingPhotoReviewQueue = () =>
   rpc<MatchmakingAdminPhotoReview[]>('get_admin_matchmaking_photo_review_queue', { p_limit: 100 });
 
-export const reviewMatchmakingPhoto = (photoId: string, decision: 'approve' | 'reject', reason?: string) =>
+export const reviewMatchmakingPhoto = (photoId: string, decision: 'approve' | 'reject' | 'remove', reason?: string) =>
   rpc<boolean>('review_matchmaking_photo', {
     p_photo_id: photoId, p_decision: decision, p_reason: reason?.trim() || null,
   });

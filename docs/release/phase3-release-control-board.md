@@ -46,7 +46,7 @@
 |---|---|
 | Gate ID / domain | RC-01 / Supabase schema and migration history |
 | Requirement | Review chronological migration inventory, duplicate versions, known repair history, Wave 4–8 objects, and compare local migrations to the remote migration history without mutation. |
-| Existing automated evidence | The release runner checks all local migration filenames are timestamped, unique, and chronologically ordered. The local inventory contains 41 migrations. Source includes Wave 4 photo foundation plus an incremental cleanup-conflict correction, Wave 5 support/coaching, Wave 6 counselling, Wave 7 trust, and Wave 8 lifecycle. |
+| Existing automated evidence | The release runner checks all local migration filenames are timestamped, unique, and chronologically ordered. The local inventory contains 42 migrations after adding the unapplied Wave 4A publication/access refinement. Source includes Wave 4 photo foundation plus an incremental cleanup-conflict correction, Wave 5 support/coaching, Wave 6 counselling, Wave 7 trust, and Wave 8 lifecycle. |
 | Required human evidence | Use an authorized read-only project/schema review after CLI/link availability; reconcile remote migration history with the complete local list; execute each database contract only against an approved non-production schema using read-only credentials. |
 | Current status | `HUMAN TEST REQUIRED` |
 | Blocker / dependency | Remote status is **unknown**. `supabase` CLI is not installed or linked in this checkout. No `db push`, migration repair, SQL execution, or remote configuration change was performed. |
@@ -98,6 +98,7 @@
 | 20261123020000 | `20261123020000_counselling_gateway.sql` | Wave 6 counselling gateway |
 | 20261124000000 | `20261124000000_trust_verification_foundation.sql` | Wave 7 trust/verification metadata |
 | 20261124010000 | `20261124010000_journey_lifecycle_account_controls.sql` | Wave 8 lifecycle and account controls |
+| 20261127000000 | `20261127000000_matchmaking_photo_release_refinements.sql` | Wave 4A automatic publication, published-photo moderation, and release access refinements (unapplied) |
 
 **Known correction history to reconcile against remote records:** the photo cleanup conflict was corrected by the 20261122010000 incremental migration; the free-course enrollment ambiguity by 20261024020000. The counselling and trust migrations also had reported pre-commit deployment failures and were corrected in their existing migration source. This history is not proof that any specific version is currently applied.
 
@@ -145,11 +146,11 @@
 | Field | Evidence |
 |---|---|
 | Gate ID / domain | RC-05 / private photo lifecycle |
-| Requirement | Verify private bucket, owner visibility of incomplete/pending slots, member denial for pending photos, moderation, approved member access, replacement, reorder, deletion, queued storage cleanup, cleanup worker operation, and both photo flags. |
-| Existing automated evidence | `test:matchmaking-photos` is an opt-in Playwright/Supabase mutation suite; `image-normalization.spec.mjs` is a local browser utility test. Photo SQL contract is a read-only transaction. Source includes access/upload/cleanup functions and cleanup conflict correction. Historical manual record: a live API acceptance attempt exposed an ambiguous cleanup `storage_path` conflict; it was corrected by the separate 20261122010000 migration. This is a defect-discovery record, not a passing lifecycle checklist. No consolidated passing historical photo checklist was found in the current checkout. Replacement, reorder, cleanup scheduling, and flag activation remain open. |
-| Required human evidence | Session B: owner/member/admin test accounts; test pending/approved/rejected and replacement/reorder/delete, then verify cleanup queue/worker in non-production. |
+| Requirement | Verify private bucket, owner visibility of incomplete slots, verified automatic publication, pending/rejected denial for members, admin/moderator rejection/removal, published-photo reporting, primary Photo 1 presentation, replacement, reorder, deletion, queued storage cleanup, cleanup worker operation, and both photo flags. |
+| Existing automated evidence | `test:matchmaking-photos` is an opt-in Playwright/Supabase mutation suite; `image-normalization.spec.mjs` is a local browser utility test. Photo SQL contract is a read-only transaction. New uploads publish only after Edge validation of Storage metadata and the actual bounded RIFF/WebP container, then the service-only finalizer records `publication_source=automatic`. Historical approved rows are labelled `administrator`; historical pending/rejected rows are not auto-published. Admin/moderator controls include approved-photo reject/remove with reasons. Historical manual record: a live API acceptance attempt exposed an ambiguous cleanup `storage_path` conflict; it was corrected by the separate 20261122010000 migration. The new `20261127000000` refinement migration is still unapplied and no human photo acceptance has been performed for this batch. |
+| Required human evidence | Session B: owner/member/admin test accounts; verify new-photo immediate publication, pending legacy items remain private, admin reject/remove/report, Photo 1 primary and gallery behavior, replacement/reorder/delete, URL expiry and cleanup queue/worker in non-production. |
 | Current status | `HUMAN TEST REQUIRED` |
-| Blocker / dependency | If photo UI or discovery is enabled, an authorized cleanup-worker schedule/runbook is required. Both flags currently default off, so this is safely deferred while disabled. |
+| Blocker / dependency | The refinement migration and updated Edge Functions need deployment, then acceptance. If photo UI or discovery is enabled, an authorized cleanup-worker schedule/runbook is required. Both flags remain default-off, so this is safely deferred while disabled. |
 | Relevant feature flag | `VITE_MATCHMAKING_PHOTOS_UI`, `VITE_MATCHMAKING_PHOTOS_DISCOVERY` |
 | Final activation decision | Keep both off until migration sync, acceptance, worker operations, and privacy tests pass. |
 
@@ -368,10 +369,11 @@ Use dedicated non-production accounts and record test date, build SHA, role/UUID
 2. Save valid Required/Preferred/Open preferences; verify invalid legacy values are discarded and no private preference is exposed.
 3. Verify preference-only edits preserve approval while public biodata edits return to draft; submit and review again.
 4. Verify discovery ranking/order and labels; confirm no compatibility percentage or score is fabricated.
-5. As owner, create/cancel incomplete/pending photo slots; as another member, confirm pending/rejected photos are inaccessible.
-6. As admin, approve/reject; as eligible member, verify approved-only access and cross-user denial.
-7. Test replacement, reorder, deletion, and cleanup queue/worker in the non-production project. These are human-required even if earlier checks are reported historically.
-8. Confirm both photo flags remain off until moderator ownership and cleanup schedule are verified.
+5. As owner, create/cancel incomplete slots; verify valid new WebP publishes only after server validation and finalization; as another member, confirm legacy pending and rejected photos are inaccessible.
+6. As admin/moderator, review a legacy pending item, reject a published item, remove a published item with a reason, and test inappropriate-photo reporting; as an eligible member, verify access and cross-user denial.
+7. Verify Photo 1 is the primary image in discovery, profile detail, and interest/introduction UI; Photo 2/3 never silently replace a missing Photo 1. Test gallery thumbnails, keyboard arrows, swipe, reporting, and signed URL expiry.
+8. Test replacement, reorder/Make Primary, deletion, account deactivation/Matchmaking removal, and cleanup queue/worker in the non-production project. These are human-required even if automated checks exist.
+9. Confirm both photo flags remain false until migration deployment, acceptance, moderation ownership, and cleanup schedule are verified.
 
 ### Session C — Marriage Support, Coaching, Counselling, Trust
 
@@ -420,7 +422,7 @@ Only release evidence, acceptance tooling, verified release-blocking fixes, oper
 
 ## Deployment inventory
 
-- **Migrations:** 41 local files, listed above. Applied versions: **unknown / not checked**.
+- **Migrations:** 42 local files, listed above. The 20261127000000 Wave 4A refinement is not applied by this task; applied versions otherwise remain **unknown / not checked**.
 - **Edge Functions:** seven source directories listed above. Deployment versions and runtime secrets: **unknown / not checked**.
 - **Feature flags:** nine centralized defaults are false; local `.env.local` has no explicit release-flag enablement. Production values: **unknown / not checked**.
 - **Supabase project link:** no local CLI available; remote status was not queried.

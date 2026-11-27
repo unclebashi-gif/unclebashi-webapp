@@ -27,7 +27,7 @@ export interface MatchmakingAdminPhotoReview {
   id: string;
   user_id: string;
   display_order: number;
-  status: 'pending_review';
+  status: 'pending_review' | 'approved';
   uploaded_at: string;
   created_at: string;
 }

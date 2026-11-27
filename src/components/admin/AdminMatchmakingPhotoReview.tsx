@@ -38,17 +38,17 @@ export const AdminMatchmakingPhotoReview: React.FC = () => {
     return () => clearInterval(timer);
   }, [load]);
 
-  const decide = async (row: MatchmakingAdminPhotoReview, decision: 'approve' | 'reject') => {
+  const decide = async (row: MatchmakingAdminPhotoReview, decision: 'approve' | 'reject' | 'remove') => {
     const reason = reasons[row.id]?.trim() ?? '';
-    if (decision === 'reject' && (!reason || reason.length > 500)) {
-      setError('Enter a rejection reason of 1 to 500 characters.');
+    if (decision !== 'approve' && (!reason || reason.length > 500)) {
+      setError('Enter a reason of 1 to 500 characters.');
       return;
     }
     setBusy(row.id);
     setError('');
     try {
-      await reviewMatchmakingPhoto(row.id, decision, decision === 'reject' ? reason : undefined);
-      toast.success(decision === 'approve' ? 'Photo approved.' : 'Photo rejected.');
+      await reviewMatchmakingPhoto(row.id, decision, decision === 'approve' ? undefined : reason);
+      toast.success(decision === 'approve' ? 'Photo published.' : decision === 'reject' ? 'Photo rejected.' : 'Photo removed from Matchmaking.');
       await load();
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'The photo review could not be saved.';
@@ -60,17 +60,17 @@ export const AdminMatchmakingPhotoReview: React.FC = () => {
   };
 
   return <section className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-    <div className="flex items-center justify-between gap-3"><div><h2 className="text-xl font-semibold text-[#1e3a5f]">Matchmaking photo review</h2><p className="mt-1 text-sm text-gray-600">Photo review is separate from biodata approval.</p></div><Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>Refresh</Button></div>
+    <div className="flex items-center justify-between gap-3"><div><h2 className="text-xl font-semibold text-[#1e3a5f]">Matchmaking photo moderation</h2><p className="mt-1 text-sm text-gray-600">New uploads publish after server validation. Staff can review pending legacy items, reject published photos, or remove them.</p></div><Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>Refresh</Button></div>
     {error && <p role="alert" className="mt-4 rounded bg-red-50 p-3 text-sm text-red-800">{error}</p>}
-    {loading ? <p className="py-5 text-sm text-gray-500">Loading pending photos…</p> : queue.length === 0
-      ? <p className="py-5 text-sm text-gray-500">No photos are waiting for review.</p>
+    {loading ? <p className="py-5 text-sm text-gray-500">Loading photo moderation items…</p> : queue.length === 0
+      ? <p className="py-5 text-sm text-gray-500">No photo moderation items are available.</p>
       : <div className="mt-4 grid gap-4 md:grid-cols-2">{queue.map(row => <article key={row.id} className="rounded-lg border p-4">
-        {urls[row.id] ? <img src={urls[row.id]} alt={`Pending Matchmaking photo for member ${row.user_id}`} className="aspect-[4/3] w-full rounded object-cover" /> : <div className="flex aspect-[4/3] items-center justify-center rounded bg-gray-100 text-sm text-gray-500">Photo preview unavailable</div>}
+        {urls[row.id] ? <img src={urls[row.id]} alt={`${row.status === 'approved' ? 'Published' : 'Pending'} Matchmaking photo for member ${row.user_id}`} className="aspect-[4/3] w-full rounded object-cover" /> : <div className="flex aspect-[4/3] items-center justify-center rounded bg-gray-100 text-sm text-gray-500">Photo preview unavailable</div>}
         <p className="mt-3 text-sm font-medium">Member {row.user_id}</p>
-        <p className="text-xs text-gray-500">Position {row.display_order} · Uploaded {new Date(row.uploaded_at).toLocaleString()}</p>
-        <label className="mt-3 block text-sm">Rejection reason (required to reject)<textarea maxLength={500} value={reasons[row.id] ?? ''} onChange={event => setReasons(current => ({ ...current, [row.id]: event.target.value }))} className="mt-1 min-h-20 w-full rounded-md border border-gray-300 p-2" /></label>
+        <p className="text-xs text-gray-500">Position {row.display_order} · {row.status === 'approved' ? 'Published' : 'Pending review'} · Uploaded {new Date(row.uploaded_at).toLocaleString()}</p>
+        <label className="mt-3 block text-sm">Reason (required to reject or remove)<textarea maxLength={500} value={reasons[row.id] ?? ''} onChange={event => setReasons(current => ({ ...current, [row.id]: event.target.value }))} className="mt-1 min-h-20 w-full rounded-md border border-gray-300 p-2" /></label>
         <p className="text-right text-xs text-gray-500">{(reasons[row.id] ?? '').length}/500</p>
-        <div className="mt-3 flex justify-end gap-2"><Button variant="outline" disabled={busy !== null} onClick={() => void decide(row, 'reject')}>Reject</Button><Button disabled={busy !== null} onClick={() => void decide(row, 'approve')}>Approve</Button></div>
+        <div className="mt-3 flex flex-wrap justify-end gap-2">{row.status === 'pending_review' && <Button disabled={busy !== null} onClick={() => void decide(row, 'approve')}>Publish</Button>}<Button variant="outline" disabled={busy !== null} onClick={() => void decide(row, 'reject')}>Reject</Button>{row.status === 'approved' && <Button variant="destructive" disabled={busy !== null} onClick={() => void decide(row, 'remove')}>Remove</Button>}</div>
       </article>)}</div>}
     {busy && <p className="mt-3 text-sm text-gray-500" role="status">Saving photo decision…</p>}
   </section>;

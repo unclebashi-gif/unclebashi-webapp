@@ -16,6 +16,29 @@ interface UploadSlotRow {
   storage_path: string;
 }
 
+function validWebpContainer(bytes: Uint8Array): boolean {
+  if (bytes.byteLength < 20) return false;
+  const ascii = (start: number, value: string) =>
+    value.split('').every((character, index) => bytes[start + index] === character.charCodeAt(0));
+  if (!ascii(0, 'RIFF') || !ascii(8, 'WEBP')) return false;
+  const declaredRiffLength = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(4, true);
+  if (declaredRiffLength + 8 !== bytes.byteLength) return false;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let offset = 12;
+  let chunkCount = 0;
+  while (offset < bytes.byteLength) {
+    if (bytes.byteLength - offset < 8) return false;
+    const chunk = String.fromCharCode(...bytes.subarray(offset, offset + 4));
+    const chunkLength = view.getUint32(offset + 4, true);
+    const paddedLength = chunkLength + (chunkLength % 2);
+    if (chunkLength < 1 || paddedLength > bytes.byteLength - offset - 8) return false;
+    if (chunkCount === 0 && !['VP8 ', 'VP8L', 'VP8X'].includes(chunk)) return false;
+    offset += 8 + paddedLength;
+    chunkCount += 1;
+  }
+  return chunkCount > 0 && offset === bytes.byteLength;
+}
+
 Deno.serve(async (request: Request): Promise<Response> => {
   const headers = photoCorsHeaders(request);
   const respond = (body: unknown, status = 200) => photoJsonResponse(body, status, headers);
@@ -89,14 +112,27 @@ Deno.serve(async (request: Request): Promise<Response> => {
         return respond({ error: 'Uploaded photo must be WebP and no larger than 3 MB.' }, 400);
       }
 
+      // Storage metadata is not proof of the uploaded bytes. Inspect the
+      // bounded object before the server finalizer publishes it. This validates
+      // the WebP container/header, not full image decoding or image content.
+      const { data: object, error: downloadError } = await service.storage
+        .from(MATCHMAKING_PHOTO_BUCKET)
+        .download(photo.storage_path);
+      if (downloadError || !object) return respond({ error: 'Uploaded photo could not be verified.' }, 400);
+      const bytes = new Uint8Array(await object.arrayBuffer());
+      if (bytes.byteLength !== sizeBytes || bytes.byteLength > MATCHMAKING_PHOTO_MAX_BYTES || !validWebpContainer(bytes)) {
+        return respond({ error: 'Uploaded photo is not a valid WebP image.' }, 400);
+      }
+
       const { data: finalized, error: finalizeError } = await service.rpc('_finalize_matchmaking_photo_upload', {
         p_user_id: caller.id,
         p_photo_id: body.photo_id,
         p_content_type: contentType,
         p_size_bytes: sizeBytes,
+        p_image_validation_version: 'webp-container-v1',
       });
       if (finalizeError || finalized !== true) return respond({ error: 'Photo upload could not be finalized.' }, 400);
-      return respond({ photo_id: body.photo_id, status: 'pending_review' });
+      return respond({ photo_id: body.photo_id, status: 'approved', publication_source: 'automatic' });
     }
 
     if (body.action === 'delete') {

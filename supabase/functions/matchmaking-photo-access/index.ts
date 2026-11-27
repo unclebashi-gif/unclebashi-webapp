@@ -30,6 +30,10 @@ Deno.serve(async (request: Request): Promise<Response> => {
     const body = await readPhotoRequestBody(request);
     if (!isUuid(body.photo_id)) return respond({ error: 'Photo not found.' }, 404);
     const service = createPhotoServiceClient();
+    const { data: callerAccount, error: callerAccountError } = await service.from('users')
+      .select('id').eq('id', caller.id).eq('account_status', 'active').maybeSingle();
+    if (callerAccountError) return respond({ error: 'Photo access could not be verified.' }, 503);
+    if (!callerAccount) return respond({ error: 'Photo not found.' }, 404);
     const { data: photo, error: photoError } = await service.from('matchmaking_photos')
       .select('id,user_id,storage_path,status,upload_completed_at,deleted_at')
       .eq('id', body.photo_id)
@@ -41,6 +45,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
     const isOwner = photo.user_id === caller.id;
     let isReviewer = false;
     let authorized = isOwner;
+    let targetProfileId: string | null = null;
     if (!authorized) {
       const { data: reviewerRole, error: roleError } = await service.from('user_roles')
         .select('role')
@@ -60,6 +65,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
         .eq('user_id', photo.user_id)
         .maybeSingle();
       if (targetError || !targetProfile) return respond({ error: 'Photo not found.' }, 404);
+      targetProfileId = targetProfile.id;
 
       // This caller-scoped RPC is the existing authorization boundary for
       // eligible members, opposite gender, mutual preferences, blocks, and
@@ -74,6 +80,28 @@ Deno.serve(async (request: Request): Promise<Response> => {
       .from(MATCHMAKING_PHOTO_BUCKET)
       .createSignedUrl((photo as PhotoAccessRow).storage_path, 300);
     if (signedError || !signed?.signedUrl) return respond({ error: 'Photo is temporarily unavailable.' }, 503);
+
+    // Revalidate the authorization boundary after signing. The URL is never
+    // returned if account/journey state, moderation role, or member visibility
+    // changed while the signing request was in flight.
+    const { data: currentCallerAccount, error: currentAccountError } = await service.from('users')
+      .select('id').eq('id', caller.id).eq('account_status', 'active').maybeSingle();
+    if (currentAccountError || !currentCallerAccount) return respond({ error: 'Photo not found.' }, 404);
+    if (isOwner) {
+      const { data: journey, error: journeyError } = await service.from('user_journeys')
+        .select('user_id').eq('user_id', caller.id).eq('journey_type', 'matchmaking').eq('status', 'active').maybeSingle();
+      if (journeyError || !journey) return respond({ error: 'Photo not found.' }, 404);
+    } else if (isReviewer) {
+      const { data: reviewerRole, error: roleError } = await service.from('user_roles')
+        .select('role').eq('user_id', caller.id).in('role', ['admin', 'moderator']).limit(1).maybeSingle();
+      if (roleError || !reviewerRole) return respond({ error: 'Photo not found.' }, 404);
+    } else if (targetProfileId) {
+      const { error: visibilityError } = await caller.client.rpc('get_matchmaking_profile', {
+        p_profile_identifier: targetProfileId,
+      });
+      if (visibilityError) return respond({ error: 'Photo not found.' }, 404);
+    }
+
     const { data: stillActive, error: activeCheckError } = await service.from('matchmaking_photos')
       .select('status')
       .eq('id', photo.id)
