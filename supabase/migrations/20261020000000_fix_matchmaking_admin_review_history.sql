@@ -1,6 +1,6 @@
 begin;
 
-create function public.get_matchmaking_admin_review_history()
+create or replace function public.get_matchmaking_admin_review_history()
 returns table (
   user_id uuid,
   status text,
